@@ -465,7 +465,9 @@ class TestSweepSupport:
         """The shared part exists once; only the entry point is per-runner."""
         for name in ("test_audio.py", "test_symbolic.py"):
             source = (REPO_ROOT / "matchmaker_eval" / name).read_text()
-            assert "from sweeps import" in source, f"{name} rolls its own sweep"
+            assert "from matchmaker_eval.sweeps import" in source, (
+                f"{name} rolls its own sweep"
+            )
             assert "def build_sweep_kwargs" not in source
 
     def test_the_example_dataset_needs_no_corpus(self):

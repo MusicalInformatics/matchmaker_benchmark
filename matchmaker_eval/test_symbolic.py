@@ -7,36 +7,41 @@ Mirrors test_audio.py structure:
   - Computes event-pooled summary (tracked-only)
 """
 
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import json
-import sys
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import partitura as pt
 
-from eval import run_evaluation
+from matchmaker_eval.eval import run_evaluation
 from matchmaker import Matchmaker
 from matchmaker.utils.eval import resolve_gt
-from folds import (
+from matchmaker_eval.folds import (
     DATA_REPO_DATASETS,
     data_repo_metadata,
     explain_missing_dataset,
     nested_dataset_root,
 )
-from methods import available_methods, default_kwargs, processor_for
-from sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
-from utils import (
+from matchmaker_eval.methods import available_methods, default_kwargs, processor_for
+from matchmaker_eval.sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
+from matchmaker_eval.utils import (
     TOLERANCES_IN_BEATS,
     SymbolicEvalConfig,
     compute_event_pooled_summary,
     save_config,
     save_results_to_csv,
 )
-from verify_tracking import check_tracking, plot_tracking
+from matchmaker_eval.verify_tracking import check_tracking, plot_tracking
 
 from tabulate import tabulate
 import wandb

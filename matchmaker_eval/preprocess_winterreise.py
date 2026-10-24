@@ -13,17 +13,22 @@ Usage:
     python preprocess_winterreise.py
 """
 
-import argparse
+# Support package imports when this file is run directly as a script.
 import sys
 from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import argparse
 
 sys.setrecursionlimit(10000)
 
 import numpy as np
 import pandas as pd
 import partitura as pt
-from folds import DATA_ROOT
-from utils import source_annotation
+from matchmaker_eval.folds import DATA_ROOT
+from matchmaker_eval.utils import source_annotation
 
 
 def match_by_pitch(

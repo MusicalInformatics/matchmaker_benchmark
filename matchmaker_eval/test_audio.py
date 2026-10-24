@@ -1,26 +1,31 @@
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import json
-import sys
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-from eval import run_offline_alignment, run_score_following
-from folds import (
+from matchmaker_eval.eval import run_offline_alignment, run_score_following
+from matchmaker_eval.folds import (
     DATA_REPO_DATASETS,
     data_repo_metadata,
     explain_missing_dataset,
     nested_dataset_root,
 )
-from methods import audio_rates, available_methods, default_kwargs
-from sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
+from matchmaker_eval.methods import audio_rates, available_methods, default_kwargs
+from matchmaker_eval.sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
 from tabulate import tabulate
-from utils import (
+from matchmaker_eval.utils import (
     AudioEvalConfig,
     compute_event_pooled_summary,
     save_config,
@@ -136,7 +141,9 @@ def run_tests_and_eval_by_dataset(
     ):
         raise ValueError("indices must be distinct one-based metadata rows")
     if workers > 1:
-        selected = indices if indices is not None else list(range(1, len(metadata) + 1))
+        selected = (
+            sorted(indices) if indices is not None else list(range(1, len(metadata) + 1))
+        )
         run_piece = partial(
             run_tests_and_eval_by_dataset, dataset_type, config, run_dir,
             dry_run, granularity, matchmaker_kwargs, save_plots,
@@ -332,11 +339,6 @@ def main(args):
         with (run_dir / "completion.json").open("w") as f:
             json.dump({"expected": expected, "completed": completed,
                        "complete": completed == expected}, f, indent=2)
-        if completed != expected:
-            raise RuntimeError(
-                f"Incomplete evaluation: {completed}/{expected}; inspect the log"
-            )
-
         # Compute event-wise pooled summary (both all and tracked-only)
         summary_all = compute_event_pooled_summary(results, run_dir, tracked_only=False)
         summary_tracked = compute_event_pooled_summary(
@@ -352,6 +354,11 @@ def main(args):
         log_summary(summary_all, summary_tracked)
     elif not dry_run and use_wandb:
         report_results_to_wandb(summary_tracked, config)
+
+    if not dry_run and completed != expected:
+        raise RuntimeError(
+            f"Incomplete evaluation: {completed}/{expected}; inspect the log"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

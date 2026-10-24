@@ -17,7 +17,7 @@ import os
 
 import wandb
 
-from methods import default_kwargs, resolve_class_values
+from matchmaker_eval.methods import default_kwargs, resolve_class_values
 
 #: Keys a sweep config carries to steer the run, not to configure the follower.
 RUNNER_KEYS = ("dataset", "method", "input_type")
