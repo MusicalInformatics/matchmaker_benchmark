@@ -31,14 +31,13 @@ from matchmaker.utils.eval import (
 from numpy.typing import NDArray
 from partitura.musicanalysis.performance_codec import get_time_maps_from_alignment
 
-from utils import (
+from matchmaker_eval.utils import (
     TOLERANCES_IN_BEATS,
     TOLERANCES_IN_MS,
     AudioEvalConfig,
-    compute_sparc,
     save_debug_results,
 )
-from verify_tracking import check_tracking, plot_tracking
+from matchmaker_eval.verify_tracking import check_tracking, plot_tracking
 
 # ---------------------------------------------------------------------------
 # Evaluation against ground truth (post-processing of a completed Matchmaker run)
@@ -129,7 +128,6 @@ def run_evaluation(
                 )
 
     eval_results.update(latency_stats(mm))
-    eval_results["sparc"] = compute_sparc(score_beat, perf_sec)
 
     if debug and save_dir is not None:
         wp_sec = np.array([perf_sec, score_beat])

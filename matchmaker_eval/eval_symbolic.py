@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
+# Support package imports when this file is run directly as a script.
 import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 
 sys.setrecursionlimit(2**31 - 1)
 import argparse
 import os
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 from collections import defaultdict
-from pathlib import Path
 import wandb
 
 import pdb
@@ -35,7 +40,7 @@ from partitura.musicanalysis.performance_codec import (
 )
 from partitura.io.importmatch import load_matchfile
 
-from partitura_utils import (
+from matchmaker_eval.partitura_utils import (
     partitura_to_framed_midi_custom as partitura_to_framed_midi,
 )
 
@@ -46,7 +51,6 @@ from matchmaker.utils.symbolic import (
     midi_messages_from_performance,
 )
 from matchmaker.features.midi import (
-    PitchIOIProcessor,
     PitchProcessor,
     PianoRollProcessor,
     PitchClassPianoRollProcessor,
@@ -81,7 +85,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-from folds import DATA_ROOT, nested_dataset_root
+from matchmaker_eval.folds import DATA_ROOT, nested_dataset_root
 
 DATASET_DIR = {
     "validation": DATA_ROOT,
@@ -187,7 +191,7 @@ def compute_features_from_symbolic(
 ):
     processor_mapping = {
         "pitch": PitchProcessor,
-        "pitch_chord": PitchIOIProcessor,
+        "pitch_chord": PitchProcessor,
         "pianoroll": PianoRollProcessor,
         "pitch_class_pianoroll": PitchClassPianoRollProcessor,
     }

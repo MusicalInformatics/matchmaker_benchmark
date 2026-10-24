@@ -336,7 +336,8 @@ def data_repo_metadata(dataset: str) -> List[dict]:
                 if not value:
                     continue
                 row[name] = value if column == "estimated_bpm" else str(DATA_ROOT / value)
-            row["title"] = Path(raw["audio"].strip()).stem
+            performance = row.get("audio_performance") or row.get("midi_performance", "")
+            row["title"] = Path(performance).stem
             rows.append(row)
     return rows
 

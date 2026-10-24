@@ -13,15 +13,21 @@ Usage:
     python preprocess_urmp.py --urmp-dir $MATCHMAKER_DATA_DIR/URMP
 """
 
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import glob
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import soundfile as sf
-from folds import DATA_ROOT
+from matchmaker_eval.folds import DATA_ROOT
 from matchmaker import Matchmaker
 
 WORKING_DIR = Path(__file__).parent.parent
