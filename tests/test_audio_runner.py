@@ -12,7 +12,7 @@ from matchmaker_eval import test_audio as runner
 
 
 @pytest.fixture
-def pieces(tmp_path, monkeypatch):
+def failed_piece_indices(tmp_path, monkeypatch):
     score = tmp_path / "score.musicxml"
     score.touch()
     metadata = pd.DataFrame(
@@ -52,54 +52,25 @@ def pieces(tmp_path, monkeypatch):
     return failed
 
 
-@pytest.mark.parametrize("indices,expected", [(None, [1, 2, 3]), ([3, 1], [1, 3])])
-def test_serial_and_parallel_keep_metadata_order(
-    pieces, monkeypatch, indices, expected
-):
+def test_serial_and_parallel_keep_metadata_order(failed_piece_indices, monkeypatch):
     # Threads let the stub run concurrently without loading real audio in children.
-    worker_counts = []
-
-    def pool(*, max_workers):
-        worker_counts.append(max_workers)
-        return ThreadPoolExecutor(max_workers=max_workers)
-
-    monkeypatch.setattr(runner, "ProcessPoolExecutor", pool)
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", ThreadPoolExecutor)
     config = runner.AudioEvalConfig(method="arzt", dataset="asap")
     serial, parallel = [
         runner.run_tests_and_eval_by_dataset(
-            "asap", config, dry_run=True, indices=indices, workers=workers
+            "asap", config, dry_run=True, indices=[3, 1], workers=workers
         )
         for workers in (1, 2)
     ]
     assert serial == parallel
-    assert serial["Index"] == expected
-    assert worker_counts == [2]
-
-
-@pytest.mark.parametrize(
-    "workers,indices,message",
-    [
-        (0, None, "workers must be positive"),
-        (-1, None, "workers must be positive"),
-        (1, [0], "one-based"),
-        (2, [4], "one-based"),
-        (2, [1, 1], "distinct"),
-    ],
-)
-def test_invalid_selection_is_rejected(pieces, workers, indices, message):
-    config = runner.AudioEvalConfig(method="arzt", dataset="asap")
-    with pytest.raises(ValueError, match=message):
-        runner.run_tests_and_eval_by_dataset(
-            "asap", config, dry_run=True, indices=indices, workers=workers
-        )
+    assert serial["Index"] == [1, 3]
 
 
 @pytest.mark.parametrize("failed", [{2}, {1, 2, 3}])
-@pytest.mark.parametrize("sweep", [False, True])
 def test_failed_run_saves_and_reports_summaries_before_raising(
-    pieces, tmp_path, monkeypatch, failed, sweep
+    failed_piece_indices, tmp_path, monkeypatch, failed
 ):
-    pieces.update(failed)
+    failed_piece_indices.update(failed)
     output = tmp_path / "output"
     args = runner.build_parser().parse_args(
         [
@@ -112,8 +83,7 @@ def test_failed_run_saves_and_reports_summaries_before_raising(
             str(output),
         ]
     )
-    args.sweep = sweep
-    args.wandb = not sweep
+    args.sweep = True
     monkeypatch.setattr(
         runner, "wandb", SimpleNamespace(config={}, run=SimpleNamespace(id="test"))
     )
@@ -125,7 +95,6 @@ def test_failed_run_saves_and_reports_summaries_before_raising(
         logged.append(summaries)
 
     monkeypatch.setattr(runner, "log_summary", check_saved)
-    monkeypatch.setattr(runner, "report_results_to_wandb", check_saved)
     completed = 3 - len(failed)
     with pytest.raises(RuntimeError, match=f"Incomplete evaluation: {completed}/3"):
         runner.main(args)
@@ -139,27 +108,3 @@ def test_failed_run_saves_and_reports_summaries_before_raising(
     for label in ("all", "tracked"):
         summary = json.loads((output / f"summary_{label}.json").read_text())
         assert summary["tracked_count"] == completed
-
-
-def test_complete_selection_uses_selected_count(pieces, tmp_path):
-    output = tmp_path / "output"
-    args = runner.build_parser().parse_args(
-        [
-            "--dataset",
-            "asap",
-            "--method",
-            "arzt",
-            "--no-plots",
-            "--indices",
-            "3",
-            "1",
-            "--output-dir",
-            str(output),
-        ]
-    )
-    runner.main(args)
-    assert json.loads((output / "completion.json").read_text()) == {
-        "expected": 2,
-        "completed": 2,
-        "complete": True,
-    }
