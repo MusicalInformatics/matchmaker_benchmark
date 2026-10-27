@@ -1,7 +1,7 @@
 {
   "fold": "eval",
   "dataset": "batik",
-  "generated": "2026-10-27T22:42:28+00:00",
+  "generated": "2026-10-27T22:50:39+00:00",
   "ranking": "tracking_rate desc, then median_b asc, within this dataset",
   "metrics": {
     "tracking_rate": "share of pieces followed to the end within tolerance",
@@ -609,6 +609,48 @@
       "rank": 14
     },
     {
+      "submission": "example-pitch-matcher",
+      "kind": "submission",
+      "method": "example-pitch-matcher",
+      "estimated_bpm": false,
+      "name": "Pitch matcher (example)",
+      "authors": "matchmaker maintainers",
+      "affiliation": "Johannes Kepler University Linz",
+      "url": "https://github.com/pymatchmaker/matchmaker_benchmark/blob/main/docs/submitting.md",
+      "description": "Worked example. Matches each incoming note against the next few score chords and jumps the pointer to the first chord containing that pitch, interpolating at the tempo estimated from the last two matches in between. Naive on purpose \u2014 no durations, no recovery from a wrong jump.",
+      "input_type": "midi",
+      "tracking_rate": 0.5,
+      "mean_b": 0.2039,
+      "median_b": 0.0,
+      "std_b": 0.7315,
+      "skewness": -7.5183,
+      "kurtosis": 85.613,
+      "smoothness": -24.5059,
+      "rtf": 0.0001,
+      "feature_latency_ms": null,
+      "inference_latency_ms": null,
+      "accuracy_0.05b": 0.8293,
+      "accuracy_0.1b": 0.8304,
+      "accuracy_0.3b": 0.8476,
+      "accuracy_0.5b": 0.8953,
+      "accuracy_1b": 0.9464,
+      "accuracy_2b": 0.9766,
+      "median_b_all": 0.0,
+      "n_pieces": 30,
+      "n_tracked": 15,
+      "n_failed": 0,
+      "evaluated": "2026-10-27T22:48:14+00:00",
+      "fold": "eval",
+      "fold_sha256": "dc4f602ac271adf04c47f517808b07b45ea6fbe2c155f4942624fd5cb3302028",
+      "evaluation_key": "ek1-f76b5839a23c",
+      "matchmaker": "0.4.0",
+      "matchmaker_commit": "6d73fb717036d60a1cfd6431fbddb4de6705d5c1",
+      "benchmark_commit": "077a64ebd78127ce5292a81299a0a1358ec00316",
+      "details": "details/example-pitch-matcher.json",
+      "overall_rank": 17,
+      "rank": 15
+    },
+    {
       "submission": "skf-audio",
       "kind": "reference",
       "method": "skf",
@@ -648,7 +690,7 @@
       "benchmark_commit": "077a64ebd78127ce5292a81299a0a1358ec00316",
       "details": "details/skf-audio.json",
       "overall_rank": 11,
-      "rank": 15
+      "rank": 16
     },
     {
       "submission": "pfkorz-midi",
@@ -690,7 +732,7 @@
       "benchmark_commit": "077a64ebd78127ce5292a81299a0a1358ec00316",
       "details": "details/pfkorz-midi.json",
       "overall_rank": 16,
-      "rank": 16
+      "rank": 17
     }
   ]
 }
