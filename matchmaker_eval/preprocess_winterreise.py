@@ -13,16 +13,22 @@ Usage:
     python preprocess_winterreise.py
 """
 
-import argparse
+# Support package imports when this file is run directly as a script.
 import sys
 from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import argparse
 
 sys.setrecursionlimit(10000)
 
 import numpy as np
 import pandas as pd
 import partitura as pt
-from utils import source_annotation
+from matchmaker_eval.folds import DATA_ROOT
+from matchmaker_eval.utils import source_annotation
 
 
 def match_by_pitch(
@@ -140,7 +146,7 @@ def process_piece(score_xml_path: Path, note_csv_path: Path) -> tuple:
 def main():
     parser = argparse.ArgumentParser(description="Preprocess Winterreise annotations")
     parser.add_argument(
-        "--data-dir", type=Path, default=Path("~/data/winterreise").expanduser()
+        "--data-dir", type=Path, default=DATA_ROOT / "winterreise"
     )
     parser.add_argument(
         "--output-dir", type=Path, default=Path(__file__).parent / "winterreise_aligned"

@@ -4,10 +4,16 @@
 Evaluate Symbolic score followers
 """
 
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from datetime import datetime
 import os
 import glob
-from pathlib import Path
 import time
 from typing import List
 import numpy as np
@@ -24,10 +30,10 @@ import matplotlib.pyplot as plt
 from matchmaker.features.midi import (
     PianoRollProcessor,
     PitchClassPianoRollProcessor,
-    PitchIOIProcessor,
+    PitchProcessor,
 )
 from matchmaker.io.midi import MidiStream, POLLING_PERIOD
-from matchmaker.utils.misc import RECVQueue
+from matchmaker.io.queue import RECVQueue
 from matchmaker.dp.oltw_arzt import OnlineTimeWarpingArzt
 from matchmaker.dp.oltw_dixon import OnlineTimeWarpingDixon
 from matchmaker.prob.hmm import (
@@ -38,7 +44,8 @@ from matchmaker.prob.hmm import (
     compute_ioi_matrix,
     compute_discrete_pitch_profiles,
 )
-from utils import save_nparray_to_csv, save_score_following_result
+from matchmaker_eval.folds import nested_dataset_root
+from matchmaker_eval.utils import save_nparray_to_csv, save_score_following_result
 
 from matchmaker.utils.tempo_models import ReactiveTempoModel, KalmanTempoModel
 
@@ -663,9 +670,9 @@ def evaluate_performance_hmm(
     )
 
     if features == "pianoroll":
-        processor = PitchIOIProcessor(piano_range=True)
+        processor = PitchProcessor(piano_range=True)
     elif features == "pitchclass":
-        processor = PitchIOIProcessor()
+        processor = PitchProcessor()
 
     (
         observation_model,
@@ -797,9 +804,8 @@ def vienna():
 
     match_files = glob.glob(
         os.path.join(
-            "/Users/carlos/Repos/vienna4x22_v100/match",
+            nested_dataset_root("vienna") / "match",
             "*.match",
-            # "/Users/carlos/Repos/batik_plays_mozart_fork/match_adjusted", "*.match"
         )
     )
 
@@ -828,13 +834,8 @@ def get_dataset(dataset: str) -> List[str]:
         asap_pieces = asap_data["midi_performance"].values.tolist()
         asap_pieces_id = [p.split("/")[-1].split(".")[0] for p in asap_pieces]
 
-        # asap_dir = "/Volumes/Rach3M02/asap-dataset/"
-
         match_files = glob.glob(
-            # os.path.join("/Volumes/Rach3M02/asap-dataset/**", "*.match"),
-            os.path.join(
-                os.path.expanduser("~/workspace/asap-dataset"), "**", "*.match"
-            ),
+            os.path.join(nested_dataset_root("asap"), "**", "*.match"),
             recursive=True,
         )
 
@@ -847,20 +848,12 @@ def get_dataset(dataset: str) -> List[str]:
 
     if dataset == "vienna":
         match_files = glob.glob(
-            os.path.join(
-                # "/Users/carlos/Repos/vienna4x22_v100/match",
-                os.path.expanduser("~/workspace/vienna4x22/match"),
-                "*.match",
-            )
+            os.path.join(nested_dataset_root("vienna") / "match", "*.match")
         )
 
     if dataset == "batik":
         match_files = glob.glob(
-            os.path.join(
-                # "/Users/carlos/Repos/batik_plays_mozart_fork/match_adjusted",
-                os.path.expanduser("~/dataset/Batik_Audio/match_adjusted"),
-                "*.match",
-            )
+            os.path.join(nested_dataset_root("batik") / "match_adjusted", "*.match")
         )
 
     match_files.sort()

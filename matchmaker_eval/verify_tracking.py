@@ -24,9 +24,10 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matchmaker.utils.eval import ONSET_WINDOW_DURATION, onset_wise_windows
 
 BEAT_ERROR_THRESHOLD = 1.0  # threshold for window median beat error (beats)
-SEGMENT_DURATION = 30.0  # window duration (seconds)
+SEGMENT_DURATION = ONSET_WINDOW_DURATION  # shared window duration (seconds)
 
 
 def _onset_wise_window_profile(
@@ -50,35 +51,13 @@ def _onset_wise_window_profile(
     errors = errors[order]
 
     windows = []
-    final_onset = float(times[-1])
-    unique_starts = np.flatnonzero(np.r_[True, times[1:] != times[:-1]])
-    for left in unique_starts:
-        start = float(times[left])
-        nominal_stop = start + window_duration
-        right = int(np.searchsorted(times, nominal_stop, side="right"))
-        reaches_final_onset = right == len(times)
+    for window in onset_wise_windows(times, window_duration):
+        left = window["onset_index_start"]
+        right = window["onset_index_stop"]
         deviation = float(np.median(errors[left:right]))
-        n_onsets = int(
-            np.count_nonzero(
-                np.r_[True, times[left + 1 : right] != times[left : right - 1]]
-            )
-        )
         windows.append(
-            {
-                "t0": start,
-                "t1": min(nominal_stop, final_onset),
-                "onset_index_start": int(left),
-                "onset_index_stop": right,
-                "n_points": right - left,
-                "n_onsets": n_onsets,
-                "deviation": deviation,
-                "failed": deviation > threshold,
-                "short_piece_fallback": left == 0 and reaches_final_onset,
-                "reaches_final_onset": reaches_final_onset,
-            }
+            {**window, "deviation": deviation, "failed": deviation > threshold}
         )
-        if reaches_final_onset:
-            break
     return windows
 
 

@@ -105,7 +105,7 @@ def summarise(metrics: dict) -> dict:
         "n_pieces": metrics.get("n_pieces"),
         "n_tracked": metrics.get("n_tracked"),
         "tracking_rate": (metrics.get("summary_all") or {}).get("tracking_rate"),
-        "beat_median": (tracked.get("beat") or {}).get("median"),
+        "median_b": tracked.get("median_b"),
         "environment": metrics.get("environment"),
     }
 

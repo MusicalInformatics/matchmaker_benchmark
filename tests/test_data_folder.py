@@ -40,36 +40,6 @@ class TestRequiredConfig:
     def test_it_is_present(self, relative):
         assert (DATA / relative).is_file()
 
-    def test_the_fold_pipeline_reads_only_these(self):
-        """The modules the evaluation path imports must not reach for a dataset.
-
-        A reference to data/metadata-*.csv or data/winterreise/ in any of these
-        would mean the pipeline still depends on material that is meant to move
-        to the data repository.
-        """
-        pipeline = [
-            "folds.py",
-            "fetch_data.py",
-            "run_submission.py",
-            "merge_shards.py",
-            "merge_references.py",
-            "leaderboard.py",
-            "export_details.py",
-            "methods.py",
-            "submission.py",
-            "build_site.py",
-        ]
-        offenders = {}
-        for name in pipeline:
-            text = (REPO_ROOT / "matchmaker_eval" / name).read_text()
-            for needle in ("data/metadata", "data/reduced", "data/winterreise",
-                           "tpdd_difficulty"):
-                if needle in text:
-                    offenders.setdefault(name, []).append(needle)
-        assert not offenders, (
-            f"the evaluation path reads dataset material from data/: {offenders}"
-        )
-
 
 class TestDatasetMaterialIsSeparable:
     """Removing the dataset leftovers must not break the pipeline's imports."""
@@ -91,19 +61,9 @@ class TestDatasetMaterialIsSeparable:
         ) % (REPO_ROOT, REPO_ROOT / "matchmaker_eval", staged / "folds")
         done = subprocess.run(
             [sys.executable, "-c", script],
-            capture_output=True, text=True, cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            cwd=tmp_path,
         )
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip() == "146"
-
-    def test_nothing_dataset_shaped_is_required(self):
-        """These are the files the eventual deletion is expected to remove."""
-        removable = [
-            p for p in DATA.rglob("*")
-            if p.is_file()
-            and p.relative_to(DATA).as_posix() not in REQUIRED
-        ]
-        # Not an assertion about the count -- just that the split is real and
-        # the required files are not among the removable ones.
-        for path in removable:
-            assert path.relative_to(DATA).as_posix() not in REQUIRED

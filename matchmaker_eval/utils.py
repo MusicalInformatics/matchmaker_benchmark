@@ -19,22 +19,21 @@ from matchmaker.prob.hmm import (
     gumbel_init_dist,
     gumbel_transition_matrix,
 )
-from matchmaker.utils.eval import get_evaluation_results, transfer_positions
+from matchmaker.utils.eval import (
+    TOLERANCES_IN_BEATS,
+    evaluate_alignment,
+    evaluate_beat_errors,
+    transfer_positions,
+)
+from matchmaker.utils.eval import spectral_arc_length as spectral_arc_length
 from matchmaker.utils.tempo_models import KalmanTempoModel
 from numpy.typing import NDArray
 from pydantic_settings import BaseSettings
 
 WORKING_DIR = Path(__file__).parent.parent
-TOLERANCES_IN_MS = [50, 100, 300, 500, 1000, 2000]
-TOLERANCES_IN_BEATS = [0.1, 0.2, 0.3, 0.5, 1.0, 2.0]
-METRICS_MS = ["mean", "median", "std", "skewness", "kurtosis"] + [
-    f"{t}ms" for t in TOLERANCES_IN_MS
-]
-METRICS_BEAT = ["mean_b", "median_b", "std_b", "skewness_b", "kurtosis_b"] + [
-    f"{t}b" for t in TOLERANCES_IN_BEATS
-]
+METRICS_BEAT = ["mean_b", "median_b", "std_b", *[f"accuracy_{t:g}b" for t in TOLERANCES_IN_BEATS], "skewness", "kurtosis", "smoothness"]
 METRICS_TRACKING = ["tracked", "max_deviation", "n_failed_segments"]
-METRICS_ALL = METRICS_MS + METRICS_BEAT + METRICS_TRACKING
+METRICS_ALL = METRICS_BEAT + METRICS_TRACKING
 
 
 class AudioEvalConfig(BaseSettings):
@@ -75,173 +74,72 @@ def save_config(config, save_dir):
         yaml.dump(config_dict, f)
 
 
-def compute_sparc(
-    score_beat: np.ndarray,
-    perf_sec: np.ndarray,
-    fs: float = 50.0,
-    fc: float = 10.0,
-    padlevel: int = 4,
-) -> float:
-    """Compute Spectral Arc Length (SPARC) for an alignment path."""
-    score_beat = np.asarray(score_beat, dtype=float)
-    perf_sec = np.asarray(perf_sec, dtype=float)
-
-    valid = np.isfinite(score_beat) & np.isfinite(perf_sec)
-    score_beat = score_beat[valid]
-    perf_sec = perf_sec[valid]
-
-    if len(perf_sec) < 2:
-        return 0.0
-
-    t_start, t_end = float(perf_sec[0]), float(perf_sec[-1])
-    duration = t_end - t_start
-    if duration <= 0.1:
-        return 0.0
-
-    n_pts = max(int(np.round(duration * fs)), 2)
-    t_uniform = np.linspace(t_start, t_end, n_pts)
-    s_interp = np.interp(t_uniform, perf_sec, score_beat)
-    vel = np.gradient(s_interp, 1.0 / fs)
-
-    nfft = int(2 ** (np.ceil(np.log2(len(vel))) + padlevel))
-    freq = np.fft.rfftfreq(nfft, d=1.0 / fs)
-    mask = freq <= fc
-    freq_filtered = freq[mask]
-
-    Mf = np.abs(np.fft.rfft(vel, n=nfft))[mask]
-    max_mf = Mf.max()
-    if max_mf > 0:
-        Mf = Mf / max_mf
-
-    d_freq = np.diff(freq_filtered) / fc
-    d_mf = np.diff(Mf)
-    arc = np.sum(np.sqrt(d_freq ** 2 + d_mf ** 2))
-    return float(-arc)
-
-
 def compute_event_pooled_summary(
     results: dict,
     run_dir: Path,
     tracked_only: bool = True,
     common_indices: Optional[set] = None,
 ) -> dict:
+    """Pool beat errors across events and smoothness/timing across pieces.
+
+    Apply the same matchmaker metric schema to all, tracked, or common-tracked
+    pieces. Saved paths supply the events; per-piece smoothness is reused when
+    available, and otherwise evaluated with matchmaker's shared function.
     """
-    Compute event-wise pooled metrics.
-
-    Accuracy metrics (mean, median, tolerances): pooled across all events.
-    RTF/latency/SPARC metrics: piece-wise averaged/median.
-
-    Parameters
-    ----------
-    tracked_only : bool
-        If True, only include tracked pieces. If False, include all pieces.
-    common_indices : set or None
-        If provided, only include pieces whose index is in common_indices.
-    """
-    n_total = len(results["Index"])
-    tracked_flags = results.get("tracked", [False] * n_total)
-
-    # Collect events from selected pieces
-    all_gt_perf = []
-    all_pred_perf = []
-    all_gt_score_beats = []
-    all_pred_score_beats = []
-    selected_indices = []
-    sparc_values = []
-
-    for idx, is_tracked in zip(results["Index"], tracked_flags):
-        if common_indices is not None and idx not in common_indices:
-            continue
-        if tracked_only and not is_tracked:
-            continue
-        selected_indices.append(idx)
-
-        wp_file = run_dir / f"wp_{idx}.tsv"
-        gt_file = run_dir / f"gt_{idx}.tsv"
+    indices = results["Index"]
+    tracked_flags = results.get("tracked", [False] * len(indices))
+    selected = [
+        position
+        for position, (index, tracked) in enumerate(zip(indices, tracked_flags))
+        if (not tracked_only or tracked)
+        and (common_indices is None or index in common_indices)
+    ]
+    all_expected, all_predicted, smoothness_values = [], [], []
+    for position in selected:
+        index = indices[position]
+        wp_file, gt_file = run_dir / f"wp_{index}.tsv", run_dir / f"gt_{index}.tsv"
         if not wp_file.exists() or not gt_file.exists():
             continue
+        wp = np.loadtxt(wp_file, delimiter="\t", skiprows=1, ndmin=2)
+        gt = np.loadtxt(gt_file, delimiter="\t", skiprows=1, ndmin=2)
+        finite = np.isfinite(gt[:, 0]) & np.isfinite(gt[:, 1])
+        expected = gt[finite, 1]
+        predicted = transfer_positions(wp.T, gt[finite, 0], 1, domain="score")
+        valid = np.isfinite(predicted)
+        all_expected.append(expected[valid])
+        all_predicted.append(predicted[valid])
 
-        wp = np.loadtxt(wp_file, delimiter="\t", skiprows=1)
-        gt = np.loadtxt(gt_file, delimiter="\t", skiprows=1)
-
-        gt_perf = gt[:, 0]  # perf times (seconds) — col 0 in new format
-        gt_score = gt[:, 1]  # score positions (beats) — col 1 in new format
-
-        # Score → perf prediction (ms metrics)
-        # wp TSV col order: perf_sec, score_beat — already matches transfer_positions input
-        wp_t = wp.T
-        pred_perf = transfer_positions(wp_t, gt_score, 1, domain="performance")
-        valid = np.isfinite(pred_perf) & np.isfinite(gt_perf)
-        all_gt_perf.append(gt_perf[valid])
-        all_pred_perf.append(pred_perf[valid])
-
-        # Perf → score prediction (beat metrics)
-        valid_gt_perf = np.isfinite(gt_perf)
-        pred_score = transfer_positions(wp_t, gt_perf[valid_gt_perf], 1, domain="score")
-        valid_b = np.isfinite(pred_score)
-        all_gt_score_beats.append(gt_score[valid_gt_perf][valid_b])
-        all_pred_score_beats.append(pred_score[valid_b])
-
-        # Compute SPARC for the alignment path
-        sparc_val = compute_sparc(wp_t[1], wp_t[0])
-        sparc_values.append(sparc_val)
+        if "smoothness" in results:
+            smoothness = results["smoothness"][position]
+        else:
+            smoothness = evaluate_alignment(
+                wp[:, 1], wp[:, 0], gt[:, 1], gt[:, 0]
+            )["smoothness"]
+        if smoothness is not None and np.isfinite(smoothness):
+            smoothness_values.append(smoothness)
 
     summary = {}
-    n_tracked = sum(1 for t in tracked_flags if t)
-    summary["tracking_rate"] = round(n_tracked / n_total, 4) if n_total > 0 else 0.0
-
-    # Beat metrics (primary)
-    if all_gt_score_beats:
-        pooled_gt_b = np.concatenate(all_gt_score_beats)
-        pooled_pred_b = np.concatenate(all_pred_score_beats)
-        total_count_b = len(pooled_gt_b)
-        beat_results = get_evaluation_results(
-            pooled_gt_b,
-            pooled_pred_b,
-            total_count_b,
-            tolerances=TOLERANCES_IN_BEATS,
-            in_seconds=False,
-        )
-        summary["beat"] = beat_results
-
-    # Ms metrics (secondary)
-    if all_gt_perf:
-        pooled_gt = np.concatenate(all_gt_perf)
-        pooled_pred = np.concatenate(all_pred_perf)
-        total_count = len(pooled_gt)
-        ms_results = get_evaluation_results(
-            pooled_gt,
-            pooled_pred,
-            total_count,
-            tolerances=TOLERANCES_IN_MS,
-            in_seconds=True,
-        )
-        summary["ms"] = ms_results
-
-    # SPARC: piece-wise mean across selected pieces
-    if sparc_values:
-        summary["sparc"] = float(f"{np.mean(sparc_values):.2f}")
-
-    # RTF and latency: piece-wise average of selected pieces
-    for key in ["rtf", "f_avg_latency", "i_avg_latency"]:
+    if all_expected and sum(map(len, all_expected)):
+        summary.update(evaluate_beat_errors(
+            np.concatenate(all_expected), np.concatenate(all_predicted),
+            beat_tolerances=TOLERANCES_IN_BEATS,
+        ))
+    summary["smoothness"] = (
+        round(float(np.mean(smoothness_values)), 4) if smoothness_values else None
+    )
+    n_tracked = sum(bool(value) for value in tracked_flags)
+    summary["tracking_rate"] = round(n_tracked / len(indices), 4) if indices else 0.0
+    for key in TIMING_KEYS:
         if key in results:
-            if common_indices is not None:
-                vals = [v for v, idx, t in zip(results[key], results["Index"], tracked_flags) if idx in common_indices and (not tracked_only or t)]
-            elif tracked_only:
-                vals = [v for v, t in zip(results[key], tracked_flags) if t]
-            else:
-                vals = list(results[key])
-            if vals:
-                summary[key] = float(f"{np.nanmean(vals):.4f}")
-
-    summary["piece_count"] = n_total
-    summary["tracked_count"] = n_tracked
-    summary["selected_count"] = len(selected_indices)
+            values = [results[key][position] for position in selected]
+            finite = [value for value in values if value is not None and np.isfinite(value)]
+            if finite:
+                summary[key] = round(float(np.mean(finite)), 4)
+    summary.update(piece_count=len(indices), tracked_count=n_tracked, selected_count=len(selected))
     return summary
 
 
-#: Per-piece timing columns the pooled summary averages piece-wise.
-TIMING_KEYS = ("rtf", "f_avg_latency", "i_avg_latency")
+TIMING_KEYS = ("rtf", "feature_latency_ms", "inference_latency_ms")
 
 
 def pooled_summaries(pieces: list, run_dir: Path) -> dict:
@@ -255,7 +153,7 @@ def pooled_summaries(pieces: list, run_dir: Path) -> dict:
     columns stay aligned with ``Index`` and the piece-wise averages skip it.
     """
     results = defaultdict(list)
-    timing = [key for key in TIMING_KEYS if any(key in piece for piece in pieces)]
+    timing = [key for key in ("smoothness", *TIMING_KEYS) if any(key in piece for piece in pieces)]
     for piece in pieces:
         results["Index"].append(piece["index"])
         results["tracked"].append(bool(piece.get("tracked")))

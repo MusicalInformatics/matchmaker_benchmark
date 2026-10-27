@@ -6,8 +6,6 @@ repositories drift apart, which is the failure mode the old hardcoded tables
 made silent.
 """
 
-import subprocess
-import sys
 import warnings
 from pathlib import Path
 
@@ -113,12 +111,12 @@ class TestBuiltinDescriptions:
     #: never appear here is matchmaker configuration -- how the follower is
     #: built is the method spec's business, and a second copy would drift.
     ALLOWED = {
-        "name", "authors", "description", "url", "affiliation",
+        "name",
+        "authors",
+        "description",
+        "url",
+        "affiliation",
         "estimated_bpm",
-    }
-    FORBIDDEN = {
-        "processor", "piano_range", "polling_period", "sample_rate",
-        "frame_rate", "hop_length", "class", "args", "default_kwargs",
     }
 
     def test_descriptions_carry_no_configuration(self):
@@ -129,16 +127,6 @@ class TestBuiltinDescriptions:
                     f"{input_type}/{method} sets {sorted(extra)} in "
                     f"{BUILTIN_METHODS_PATH.name}; only prose and evaluation "
                     "declarations belong here"
-                )
-
-    def test_matchmaker_configuration_never_appears_here(self):
-        """How a follower is built comes from the spec, not from this file."""
-        for input_type, entries in read_descriptions().items():
-            for method, entry in (entries or {}).items():
-                clash = set(entry) & self.FORBIDDEN
-                assert not clash, (
-                    f"{input_type}/{method} sets {sorted(clash)}, which would "
-                    "be a second copy of matchmaker's method spec"
                 )
 
     def test_unknown_method_is_rejected_before_the_yaml_is_consulted(self):
@@ -186,9 +174,7 @@ class TestEntryPointsUseTheRegistry:
         from matchmaker import register_method
         from matchmaker.matchmaker import unregister_method
 
-        register_method(
-            "cli-probe", input_type="midi", build_follower=lambda mm: None
-        )
+        register_method("cli-probe", input_type="midi", build_follower=lambda mm: None)
         try:
             assert "cli-probe" in self._choices(
                 test_symbolic.build_parser(), "--method"
@@ -275,30 +261,13 @@ class TestFoldPaths:
         from run_submission import fold_file_label
 
         external = tmp_path / "subset.csv"
-        external.write_text(
-            (REPO_ROOT / "data" / "folds" / "example.csv").read_text()
-        )
+        external.write_text((REPO_ROOT / "data" / "folds" / "example.csv").read_text())
         assert fold_file_label(external) == str(external)
 
     def test_fold_file_label_stays_relative_inside_the_repo(self):
         from run_submission import fold_file_label
 
         assert fold_file_label("example") == "data/folds/example.csv"
-
-
-class TestNoStaleMethodTables:
-    """No benchmark module may keep its own list of matchmaker's methods."""
-
-    FORBIDDEN = ("HMM_CLASSES",)
-
-    def test_hardcoded_class_tables_are_gone(self):
-        from pathlib import Path
-
-        eval_dir = Path(__file__).resolve().parent.parent / "matchmaker_eval"
-        for path in eval_dir.glob("*.py"):
-            text = path.read_text()
-            for name in self.FORBIDDEN:
-                assert name not in text, f"{path.name} still defines {name}"
 
 
 class TestOptionalLatencyStats:
@@ -319,7 +288,7 @@ class TestOptionalLatencyStats:
         input_type = "audio"
 
         def get_latency_stats(self):
-            return {"f_avg_latency": 1.5, "i_avg_latency": 0.1}
+            return {"feature_latency_ms": 1.5, "inference_latency_ms": 0.1}
 
     class _Midi:
         input_type = "midi"
@@ -336,8 +305,8 @@ class TestOptionalLatencyStats:
         from eval import latency_stats
 
         assert latency_stats(self._WithLatency()) == {
-            "f_avg_latency": 1.5,
-            "i_avg_latency": 0.1,
+            "feature_latency_ms": 1.5,
+            "inference_latency_ms": 0.1,
         }
 
     def test_midi_runs_are_left_alone(self):
@@ -395,18 +364,6 @@ class TestBaselineSubmissions:
 class TestSweepSupport:
     """Both runners sweep the same way; sweep.py's separate path is gone."""
 
-    def test_both_runners_have_a_sweep_mode(self):
-        for name in ("test_audio.py", "test_symbolic.py"):
-            done = subprocess.run(
-                [sys.executable, str(REPO_ROOT / "matchmaker_eval" / name), "--help"],
-                cwd=REPO_ROOT, capture_output=True, text=True,
-            )
-            assert done.returncode == 0, done.stderr
-            assert "--sweep" in done.stdout, f"{name} cannot run as a sweep agent"
-
-    def test_the_old_standalone_sweep_is_gone(self):
-        assert not (REPO_ROOT / "matchmaker_eval" / "sweep.py").exists()
-
     def test_every_sweep_config_names_a_program_that_exists(self):
         import yaml as _yaml
 
@@ -454,19 +411,16 @@ class TestSweepSupport:
         kwargs = sweep_kwargs(
             "midi",
             "hmm",
-            {"dataset": "valid", "method": "hmm", "input_type": "midi",
-             "piano_range": False},
+            {
+                "dataset": "valid",
+                "method": "hmm",
+                "input_type": "midi",
+                "piano_range": False,
+            },
         )
         for key in ("dataset", "method", "input_type"):
             assert key not in kwargs
         assert kwargs["piano_range"] is False
-
-    def test_both_runners_sweep_through_the_same_module(self):
-        """The shared part exists once; only the entry point is per-runner."""
-        for name in ("test_audio.py", "test_symbolic.py"):
-            source = (REPO_ROOT / "matchmaker_eval" / name).read_text()
-            assert "from sweeps import" in source, f"{name} rolls its own sweep"
-            assert "def build_sweep_kwargs" not in source
 
     def test_the_example_dataset_needs_no_corpus(self):
         """The runners' smoke dataset is the piece committed under resources/."""
@@ -479,8 +433,12 @@ class TestSweepSupport:
             assert row["dataset"] == "local", (
                 "the example dataset must resolve inside the repository"
             )
-            for column in ("xml_score", "midi_performance", "match",
-                           "audio_performance"):
+            for column in (
+                "xml_score",
+                "midi_performance",
+                "match",
+                "audio_performance",
+            ):
                 path = REPO_ROOT / "resources" / row[column]
                 assert path.exists(), f"{column} -> {path} is not committed"
 

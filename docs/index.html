@@ -221,8 +221,8 @@
   table.board > thead th .arrow { opacity: 0; margin-left: 4px; }
   table.board > thead th[aria-sort] { color: var(--accent); }
   table.board > thead th[aria-sort] .arrow { opacity: 1; }
-  thead th[aria-sort="ascending"] .arrow::after { content: "\2191"; }
-  thead th[aria-sort="descending"] .arrow::after { content: "\2193"; }
+  thead th[aria-sort="ascending"] .arrow::after { content: "\25B4"; }
+  thead th[aria-sort="descending"] .arrow::after { content: "\25BE"; }
 
   table.board > tbody td {
     padding: 14px 14px;
@@ -459,17 +459,20 @@
 
   /* Full metric readout for one piece. */
   .metric-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 6px 18px; margin-bottom: 14px;
   }
   .metric {
     display: flex; justify-content: space-between; gap: 10px;
+    white-space: nowrap;
     font-family: var(--mono); font-size: 11.5px;
     border-bottom: 1px dotted var(--rule-firm); padding-bottom: 4px;
   }
-  .metric span:first-child { color: var(--ink-mute); }
-  .metric span:last-child { color: var(--ink); }
-  .metric.cmp span:last-child { display: flex; gap: 10px; }
+  .metric > span:first-child { color: var(--ink-mute); }
+  .metric > span:last-child { color: var(--ink); }
+  .approx-ms { color: var(--ink-mute); white-space: nowrap; }
+  .metric.cmp { grid-column: span 2; }
+  .metric.cmp > span:last-child { display: flex; gap: 10px; }
   .group-label {
     font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
     text-transform: uppercase; color: var(--accent);
@@ -484,6 +487,20 @@
     font-style: italic;
     font-size: 16px;
   }
+  /* Rows scored under other conditions than the ranked ones: listed, never
+     ranked against them, with what changed. */
+  .earlier {
+    margin: 18px 0 0;
+    padding: 14px 18px;
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    color: var(--ink-mute);
+    font-size: 13px;
+  }
+  .earlier h2 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+  .earlier ul { margin: 6px 0 0; padding-left: 18px; }
+  .earlier code, .provenance code { font-family: var(--mono); }
+  .provenance a { color: inherit; text-underline-offset: 2px; }
   footer {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -556,28 +573,30 @@
           <th data-key="rank" data-dir="asc" scope="col">#<span class="arrow"></span></th>
           <th data-key="name" data-dir="asc" scope="col">Submission<span class="arrow"></span></th>
           <th data-key="input_type" data-dir="asc" scope="col">Input<span class="arrow"></span></th>
-          <th data-key="tracking_rate" data-dir="desc" aria-sort="descending" scope="col">Tracked<span class="arrow"></span></th>
-          <th data-key="beat_0.3b" data-dir="desc" scope="col">&le; 0.3 beat<span class="arrow"></span></th>
-          <th data-key="beat_median" data-dir="asc" scope="col">Beat err (med)<span class="arrow"></span></th>
-          <th data-key="beat_mean" data-dir="asc" scope="col">Beat err (mean)<span class="arrow"></span></th>
-          <th data-key="ms_median" data-dir="asc" scope="col">Ms err<span class="arrow"></span></th>
-          <th data-key="beat_median_all" data-dir="asc" scope="col">Beat err · all<span class="arrow"></span></th>
-          <th data-key="rtf" data-dir="asc" scope="col">RTF<span class="arrow"></span></th>
+          <th data-key="tracking_rate" data-dir="desc" aria-sort="descending" scope="col">Tracked ↑<span class="arrow"></span></th>
+          <th data-key="accuracy_0.3b" data-dir="desc" scope="col">&le; 0.3 beat ↑<span class="arrow"></span></th>
+          <th data-key="median_b" data-dir="asc" scope="col">Beat err (med) ↓<span class="arrow"></span></th>
+          <th data-key="mean_b" data-dir="asc" scope="col">Beat err (mean) ↓<span class="arrow"></span></th>
+          <th data-key="smoothness" data-dir="desc" scope="col">Smoothness ↑<span class="arrow"></span></th>
+          <th data-key="median_b_all" data-dir="asc" scope="col">Beat err · all ↓<span class="arrow"></span></th>
+          <th data-key="rtf" data-dir="asc" scope="col">RTF ↓<span class="arrow"></span></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="empty" id="empty" hidden></div>
+    <div class="earlier" id="earlier" hidden></div>
   </div>
 
   <footer>
     <section>
       <h2>Tracked</h2>
       <p>
-        A piece counts as tracked unless two or more 30-second segments drift
-        past the tolerance — 0.5 beats for MIDI, 1.0 for audio. A follower that
-        loses the performer produces meaningless errors, so accuracy is only
-        reported over the pieces it held onto.
+        The performance is walked in 30-second windows, one starting at every
+        annotated onset. A piece counts as tracked unless the median beat error
+        in any window exceeds the tolerance — 0.5 beats for MIDI, 1.0 for
+        audio. A follower that loses the performer produces meaningless errors,
+        so accuracy is only reported over the pieces it held onto.
       </p>
     </section>
     <section>
@@ -616,6 +635,18 @@
       </p>
     </section>
     <section>
+      <h2>Evaluation key</h2>
+      <p>
+        Every ranked row was scored under the same conditions: the same fold,
+        scoring code, matchmaker sources and score parser, and, within an input
+        type, the same data files. MIDI and audio stream different files, so
+        each has its own key above, a hash of all of these. Cite the key of the
+        row's input type with any number you take from here;
+        <a href="archive/index.json">every key's table is archived</a> and
+        stays at <code>archive/&lt;key&gt;/leaderboard.json</code>.
+      </p>
+    </section>
+    <section>
       <h2>Reference rows</h2>
       <p>
         Entries marked <span class="kind reference">reference</span> are the
@@ -649,23 +680,22 @@
 // results/. Inlined data, when present, wins over both.
 const SOURCES = ["./", "../results/"];
 const NUMERIC = new Set([
-  "rank", "tracking_rate", "beat_0.3b", "beat_median", "beat_mean",
-  "ms_median", "beat_median_all", "rtf",
+  "rank", "tracking_rate", "accuracy_0.3b", "median_b", "mean_b",
+  "smoothness", "median_b_all", "rtf",
 ]);
 
-// Metrics where a smaller number is better. Used to colour comparisons; every
-// other metric is a share, where larger is better.
+// Metrics where a smaller number is better.
 const LOWER_IS_BETTER = new Set([
-  "beat_mean", "beat_median", "beat_std", "ms_mean", "ms_median", "ms_std",
-  "max_deviation", "n_failed_segments", "rtf", "f_avg_latency", "i_avg_latency",
+  "mean_b", "median_b", "std_b", "median_b_all",
+  "max_deviation", "n_failed_segments", "rtf", "feature_latency_ms", "inference_latency_ms",
 ]);
 
 const METRIC_GROUPS = [
-  ["Beat error (performance → score)", (m) => m.startsWith("beat_") && !m.endsWith("b")],
-  ["Beat error within tolerance", (m) => m.startsWith("beat_") && m.endsWith("b")],
-  ["Millisecond error (score → performance)", (m) => m.startsWith("ms_") && !m.endsWith("ms")],
-  ["Millisecond error within tolerance", (m) => m.startsWith("ms_") && m.endsWith("ms")],
-  ["Tracking and timing", () => true],
+  ["Error analysis", (m) => ["mean_b", "median_b", "std_b", "skewness", "kurtosis"].includes(m)],
+  ["Alignment accuracy within tolerance", (m) => m.startsWith("accuracy_")],
+  ["Smoothness (SPARC)", (m) => m === "smoothness"],
+  ["Tracking", (m) => ["tracked", "tracking_rate", "max_deviation", "n_failed_segments"].includes(m)],
+  ["Processing time", () => true],
 ];
 
 let entries = [];
@@ -688,15 +718,14 @@ function fmt(value, digits) {
 
 // Shares are stored 0..1; showing them as percentages is what people read.
 function isShare(metric) {
-  return metric.endsWith("b") || metric.endsWith("ms") || metric === "tracking_rate";
+  return metric.startsWith("accuracy_") || metric === "tracking_rate";
 }
 
 function showMetric(metric, value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   if (metric === "n_failed_segments") return String(value);
   if (isShare(metric)) return (value * 100).toFixed(1) + "%";
-  if (metric.startsWith("ms_")) return Number(value).toFixed(1);
-  return Number(value).toFixed(3);
+  return Number(value).toFixed(4);
 }
 
 function metricCell(value, digits) {
@@ -878,20 +907,32 @@ async function loadDetail(entry) {
 // the main table reports, and over every piece, lost ones included — and the
 // toggle above the table picks which one is shown.
 
-// The nested summary {beat: {mean, "0.3b", …}, ms: {…}, sparc, rtf} under the
-// flat beat_mean / ms_50ms names the per-piece table uses, in the same order,
-// so the same formatting and better/worse rules apply.
+// Metric keys are shared by matchmaker, JSON, CSV, and the website.
+function metricLabel(metric) {
+  const label = metric.startsWith("accuracy_")
+    ? `≤ ${metric.slice("accuracy_".length, -1)} beat`
+    : ({mean_b: "mean error (beats)", median_b: "median error (beats)", std_b: "error std (beats)",
+        feature_latency_ms: "feature latency (ms)", inference_latency_ms: "inference latency (ms)"})[metric]
+      || metric.replace(/_/g, " ");
+  const direction = LOWER_IS_BETTER.has(metric) ? " ↓"
+    : isShare(metric) || metric === "smoothness" ? " ↑" : "";
+  return label + direction;
+}
+
+function showPieceMetric(metric, piece) {
+  const value = piece?.[metric];
+  const text = showMetric(metric, value);
+  const bpm = piece?.performance_bpm;
+  if (!["mean_b", "median_b"].includes(metric) || !Number.isFinite(value)
+      || !Number.isFinite(bpm) || bpm <= 0) return text;
+  const ms = Math.round(value * 60000 / bpm);
+  return `${text} <span class="approx-ms">(≈${ms} ms)</span>`;
+}
+
 function flatSummary(summary) {
-  const out = {};
-  for (const group of ["beat", "ms"]) {
-    for (const [key, value] of Object.entries(summary?.[group] || {})) {
-      out[`${group}_${key}`] = value;
-    }
-  }
-  for (const key of ["sparc", "rtf", "f_avg_latency", "i_avg_latency"]) {
-    if (summary && key in summary) out[key] = summary[key];
-  }
-  return out;
+  const fields = ["mean_b", "median_b", "std_b", "skewness", "kurtosis", "smoothness", "rtf", "feature_latency_ms", "inference_latency_ms"];
+  return Object.fromEntries(Object.entries(summary || {})
+    .filter(([metric]) => fields.includes(metric) || metric.startsWith("accuracy_")));
 }
 
 function datasetRows(detail, pool) {
@@ -925,8 +966,8 @@ function datasetTable(detail, other, pool, active) {
   const head = `
     <tr>
       <th class="sticky c0">dataset</th>
-      <th>tracked</th>
-      ${columns.map((m) => `<th>${escapeHtml(m.replace(/_/g, " "))}</th>`).join("")}
+      <th>tracked ↑</th>
+      ${columns.map((m) => `<th>${escapeHtml(metricLabel(m))}</th>`).join("")}
     </tr>`;
 
   const dim = (text) => `<br><span style="color:var(--ink-mute)">${text}</span>`;
@@ -937,7 +978,7 @@ function datasetTable(detail, other, pool, active) {
       if (!cmp) return `<td>${showMetric(m, a)}</td>`;
       const b = cmp.metrics[m];
       let cls = "";
-      if (typeof a === "number" && typeof b === "number" && a !== b) {
+      if (typeof a === "number" && typeof b === "number" && a !== b && !["skewness", "kurtosis"].includes(m)) {
         cls = (LOWER_IS_BETTER.has(m) ? a < b : a > b) ? "delta-better" : "delta-worse";
       }
       return `<td class="${cls}">${showMetric(m, a)}${dim(showMetric(m, b))}</td>`;
@@ -985,7 +1026,7 @@ function pieceTable(detail, other, state) {
       <th class="sticky c1">dataset</th>
       <th class="sticky c2">piece</th>
       <th data-sort="tracked">verdict</th>
-      ${metrics.map((m) => `<th data-sort="${m}">${escapeHtml(m.replace(/_/g, " "))}</th>`).join("")}
+      ${metrics.map((m) => `<th data-sort="${m}">${escapeHtml(metricLabel(m))}</th>`).join("")}
     </tr>`;
 
   const otherByIndex = new Map((other?.pieces || []).map((p) => [p.index, p]));
@@ -993,7 +1034,7 @@ function pieceTable(detail, other, state) {
   if (state.sort) {
     const key = state.sort;
     rows.sort((a, b) => {
-      const x = a[key], y = b[key];
+      const x = a?.[key], y = b?.[key];
       if (typeof x === "boolean" || typeof y === "boolean") return (y ? 1 : 0) - (x ? 1 : 0);
       const xv = x ?? Infinity, yv = y ?? Infinity;
       return state.dir === "asc" ? xv - yv : yv - xv;
@@ -1003,15 +1044,15 @@ function pieceTable(detail, other, state) {
   const body = rows.map((p) => {
     const cmp = otherByIndex.get(p.index);
     const cells = metrics.map((m) => {
-      const mine = showMetric(m, p[m]);
+      const mine = showPieceMetric(m, p);
       if (!cmp) return `<td>${mine}</td>`;
-      const a = p[m], b = cmp[m];
+      const a = p?.[m], b = cmp?.[m];
       let cls = "";
-      if (typeof a === "number" && typeof b === "number" && a !== b) {
+      if (typeof a === "number" && typeof b === "number" && a !== b && !["skewness", "kurtosis"].includes(m)) {
         const better = LOWER_IS_BETTER.has(m) ? a < b : a > b;
         cls = better ? "delta-better" : "delta-worse";
       }
-      return `<td class="${cls}">${mine}<br><span style="color:var(--ink-mute)">${showMetric(m, cmp?.[m])}</span></td>`;
+      return `<td class="${cls}">${mine}<br><span style="color:var(--ink-mute)">${showPieceMetric(m, cmp)}</span></td>`;
     }).join("");
     const verdict = cmp
       ? `<td><span class="${p.tracked ? "verdict-ok" : "verdict-lost"}">${p.tracked ? "tracked" : "lost"}</span><br>
@@ -1040,16 +1081,16 @@ function metricReadout(detail, piece, other, otherDetail) {
     blocks.push(`<div class="group-label">${escapeHtml(label)}</div>`);
     blocks.push(group.map((m) => {
       if (!other) {
-        return `<div class="metric"><span>${escapeHtml(m.replace(/_/g, " "))}</span><span>${showMetric(m, piece[m])}</span></div>`;
+        return `<div class="metric"><span>${escapeHtml(metricLabel(m))}</span><span>${showPieceMetric(m, piece)}</span></div>`;
       }
-      const a = piece[m], b = other[m];
+      const a = piece?.[m], b = other?.[m];
       let cls = "";
-      if (typeof a === "number" && typeof b === "number" && a !== b) {
+      if (typeof a === "number" && typeof b === "number" && a !== b && !["skewness", "kurtosis"].includes(m)) {
         cls = (LOWER_IS_BETTER.has(m) ? a < b : a > b) ? "delta-better" : "delta-worse";
       }
-      return `<div class="metric cmp"><span>${escapeHtml(m.replace(/_/g, " "))}</span>
-        <span><span class="${cls}">${showMetric(m, a)}</span>
-        <span style="color:var(--ink-mute)">${showMetric(m, b)}</span></span></div>`;
+      return `<div class="metric cmp"><span>${escapeHtml(metricLabel(m))}</span>
+        <span><span class="${cls}">${showPieceMetric(m, piece)}</span>
+        <span style="color:var(--ink-mute)">${showPieceMetric(m, other)}</span></span></div>`;
     }).join(""));
   }
   const legend = other
@@ -1153,12 +1194,6 @@ async function fillDetail(entry, container) {
       view.innerHTML =
         plotAlignment(detail, piece, cmp, otherDetail, width) +
         plotError(detail, piece, cmp, otherDetail, width) +
-        `<p class="plot-hint">
-           Top: score position against performance time — where the two lines
-           sit together the follower is with the performer. Bottom: the size of
-           the error at every ground-truth onset, against the threshold the
-           tracking verdict uses.
-         </p>` +
         metricReadout(detail, piece, cmp, otherDetail);
       if (scroll) view.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
@@ -1251,8 +1286,11 @@ function detailRow(entry) {
     ["pieces tracked", `${entry.n_tracked} of ${entry.n_pieces}`],
     ["matchmaker method", entry.method || "—"],
     ["evaluated", (entry.evaluated || "").replace("T", " ").replace("+00:00", " UTC")],
-    ["matchmaker", entry.matchmaker || "—"],
+    ["matchmaker", entry.matchmaker_commit
+      ? `${entry.matchmaker} (${entry.matchmaker_commit.slice(0, 8)})`
+      : entry.matchmaker || "—"],
     ["fold digest", (entry.fold_sha256 || "").slice(0, 16) + "…"],
+    ["evaluation key", entry.evaluation_key || "—"],
   ];
   return `
     <tr class="detail" hidden>
@@ -1281,8 +1319,8 @@ function render() {
   shown.sort((a, b) => {
     const dir = sort.dir === "asc" ? 1 : -1;
     if (NUMERIC.has(sort.key)) {
-      const x = a[sort.key] ?? Infinity;
-      const y = b[sort.key] ?? Infinity;
+      const x = a?.[sort.key] ?? Infinity;
+      const y = b?.[sort.key] ?? Infinity;
       return (x - y) * dir;
     }
     return String(a[sort.key] ?? "").localeCompare(String(b[sort.key] ?? "")) * dir;
@@ -1290,7 +1328,7 @@ function render() {
 
   tbody.innerHTML = shown.map((entry, i) => {
     const pct = Math.round((entry.tracking_rate || 0) * 100);
-    const within = entry["beat_0.3b"];
+    const within = entry["accuracy_0.3b"];
     return `
       <tr class="entry" data-key="${escapeHtml(entry.submission)}" tabindex="0"
           role="button" aria-expanded="false">
@@ -1315,10 +1353,10 @@ function render() {
         <td>${within === null || within === undefined
               ? '<span class="num dim">&mdash;</span>'
               : `<span class="num">${Math.round(within * 100)}%</span>`}</td>
-        <td>${metricCell(entry.beat_median, 3)}</td>
-        <td>${metricCell(entry.beat_mean, 3)}</td>
-        <td>${metricCell(entry.ms_median, 2)}</td>
-        <td>${metricCell(entry.beat_median_all, 3)}</td>
+        <td>${metricCell(entry.median_b, 3)}</td>
+        <td>${metricCell(entry.mean_b, 3)}</td>
+        <td>${metricCell(entry.smoothness, 4)}</td>
+        <td>${metricCell(entry.median_b_all, 3)}</td>
         <td>${metricCell(entry.rtf, 4)}</td>
       </tr>
       ${detailRow(entry)}`;
@@ -1420,7 +1458,28 @@ loadBoard().then((board) => {
     ["pieces", pieces],
     ["entries", entries.length],
     ["generated", (board.generated || "").replace("T", " ").replace("+00:00", " UTC")],
-  ].map(([k, v]) => `<span>${k} <b>${escapeHtml(v)}</b></span>`).join("");
+  ].map(([k, v]) => `<span>${k} <b>${escapeHtml(v)}</b></span>`).join("")
+    // One key per input type: MIDI and audio stream different files.
+    + Object.entries(board.evaluation_keys || {}).filter(([, key]) => key).map(([inputType, key]) =>
+      `<span>${inputType === "midi" ? "MIDI" : escapeHtml(inputType)} key <b><a href="archive/${encodeURIComponent(key)}/leaderboard.json"
+           title="the archived table for this key"><code>${escapeHtml(key)}</code></a></b></span>`
+    ).join("");
+
+  // Rows scored under other conditions are listed, never ranked against the
+  // rest: their numbers are not comparable until they are re-run.
+  const earlier = board.earlier_conditions || [];
+  el("earlier").hidden = earlier.length === 0;
+  el("earlier").innerHTML = earlier.length ? `
+    <h2>Not ranked: scored under earlier conditions</h2>
+    <p>These entries were evaluated before something that decides the numbers
+       changed, so they are not compared with the table above until they are
+       re-run.</p>
+    <ul>${earlier.map((e) => `
+      <li><b>${escapeHtml(e.name)}</b> (${escapeHtml(e.input_type)}) —
+        key <code>${escapeHtml(e.evaluation_key || "none")}</code>,
+        evaluated ${escapeHtml((e.evaluated || "").slice(0, 10))};
+        changed since: ${escapeHtml((e.evaluation_changed || []).join(", ") || "recorded before keys existed")}</li>`).join("")}
+    </ul>` : "";
 
   // leaderboard-<dataset>.csv sits next to leaderboard.csv wherever the page
   // found it; the datasets are whichever the entries were evaluated on.

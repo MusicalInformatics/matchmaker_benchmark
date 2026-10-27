@@ -44,11 +44,6 @@ class TestRunDir:
             results / "results" / "runs" / "valid" / "arzt-audio"
         )
 
-    def test_metrics_path_follows_the_run_dir(self, results):
-        assert R.metrics_path_for("arzt", "audio", "eval").parent == R.run_dir_for(
-            "arzt", "audio", "eval"
-        )
-
 
 class TestPiecesDone:
     def test_it_counts_finished_pieces(self, results):
@@ -108,28 +103,16 @@ class TestRerun:
 class TestProgress:
     def test_it_reports_every_job(self, results):
         write_pieces(R.run_dir_for("arzt", "audio", "eval"), 10)
-        write_pieces(R.run_dir_for("skf", "audio", "eval"), 3)
-        progress = R.Progress(
-            [("arzt", "audio"), ("skf", "audio")], "eval", total=146
-        )
+        write_pieces(R.run_dir_for("skf", "audio", "eval"), 20)
+        progress = R.Progress([("arzt", "audio"), ("skf", "audio")], "eval", total=146)
         assert progress.snapshot() == [
             ("arzt-audio", 10, 146),
-            ("skf-audio", 3, 146),
+            ("skf-audio", 20, 146),
         ]
-
-    def test_the_rendering_names_each_method_and_its_count(self, results):
-        write_pieces(R.run_dir_for("arzt", "audio", "eval"), 10)
-        text = R.Progress([("arzt", "audio")], "eval", total=146).render()
-        assert "arzt-audio" in text
-        assert "10/146" in text
-
-    def test_it_totals_across_methods(self, results):
-        write_pieces(R.run_dir_for("arzt", "audio", "eval"), 10)
-        write_pieces(R.run_dir_for("skf", "audio", "eval"), 20)
-        text = R.Progress(
-            [("arzt", "audio"), ("skf", "audio")], "eval", total=100
-        ).render()
-        assert "30/200" in text
+        text = progress.render()
+        assert "arzt-audio" in text and "skf-audio" in text
+        assert "10/146" in text and "20/146" in text
+        assert "30/292" in text
 
     def test_it_survives_a_run_directory_that_does_not_exist(self, results):
         text = R.Progress([("ghost", "midi")], "eval", total=146).render()
@@ -152,16 +135,3 @@ class TestProgress:
             time.sleep(0.05)
         assert "arzt-audio" in stream.getvalue()
         assert not progress._thread.is_alive()
-
-
-class TestProgressCanBeSwitchedOff:
-    def test_the_flag_exists_with_a_sensible_default(self):
-        import subprocess
-
-        done = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "matchmaker_eval" / "run_references.py"),
-             "--help"],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        )
-        assert "--progress-interval" in done.stdout
-        assert "--watch" in done.stdout

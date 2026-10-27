@@ -10,17 +10,24 @@ reads the original AuMix_<folder>.wav, so re-running is safe.
 
 Usage:
     python preprocess_urmp.py
-    python preprocess_urmp.py --urmp-dir ~/data/URMP
+    python preprocess_urmp.py --urmp-dir $MATCHMAKER_DATA_DIR/URMP
 """
+
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
 import glob
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import soundfile as sf
+from matchmaker_eval.folds import DATA_ROOT
 from matchmaker import Matchmaker
 
 WORKING_DIR = Path(__file__).parent.parent
@@ -78,7 +85,7 @@ def load_merged_perf(piece_dir):
 def main():
     parser = argparse.ArgumentParser(description="Build URMP GT + audio from raw notes")
     parser.add_argument(
-        "--urmp-dir", type=Path, default=Path("~/data/URMP").expanduser()
+        "--urmp-dir", type=Path, default=DATA_ROOT / "URMP"
     )
     args = parser.parse_args()
 

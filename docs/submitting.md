@@ -38,7 +38,7 @@ cd matchmaker_benchmark
 
 conda env create -f environment.yml
 conda activate matchmaker-benchmark
-pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@main"
+pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@v0.4.0"
 ```
 
 You do not need to download any dataset to write and test a submission — the

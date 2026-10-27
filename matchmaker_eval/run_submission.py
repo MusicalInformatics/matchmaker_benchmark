@@ -53,6 +53,11 @@ from matchmaker import Matchmaker
 from matchmaker.base import OnlineAlignment
 
 from matchmaker_eval.fetch_data import FetchError, fetch_for_pieces, load_config
+from matchmaker_eval.provenance import (
+    code_components,
+    evaluation_record,
+    piece_data_sha256,
+)
 from matchmaker_eval.folds import (
     LEADERBOARD_FOLD,
     REPO_ROOT,
@@ -181,19 +186,6 @@ def environment_info() -> dict:
     return info
 
 
-def flatten_metrics(nested: dict) -> dict:
-    """``{"beat": {...}, "ms": {...}, ...}`` -> ``{"beat_...", "ms_...", ...}``."""
-    flat = {}
-    for key, value in nested.get("beat", {}).items():
-        flat[f"beat_{key}"] = value
-    for key, value in nested.get("ms", {}).items():
-        flat[f"ms_{key}"] = value
-    for key, value in nested.items():
-        if key not in ("beat", "ms"):
-            flat[key] = value
-    return flat
-
-
 def check_follower(follower) -> None:
     """Catch the two wiring mistakes early, with a message worth reading.
 
@@ -221,7 +213,7 @@ def check_follower(follower) -> None:
 def run_piece(
     method, piece, input_type, index, run_dir, save_plots, estimated_bpm=False
 ):
-    """Run and score one piece. Returns (flat_metrics, nested_metrics).
+    """Run and score one piece, returning the shared metric fields.
 
     ``method`` is the name the submission registered with matchmaker, so this
     is an ordinary ``Matchmaker`` call — the same one ``test_symbolic.py`` and
@@ -256,14 +248,18 @@ def run_piece(
     if wp is None or wp.size == 0:
         raise SubmissionError("the follower produced an empty alignment path")
 
-    perf_sec, score_beat = resolve_gt(piece.match_path, mm.score_part.note_array())
+    # For MIDI input, GT times come from the MIDI file the follower streams.
+    perf_sec, score_beat = resolve_gt(
+        piece.match_path,
+        mm.score_part.note_array(),
+        performance=str(piece.performance_path(input_type)) if input_type == "midi" else None,
+    )
     gt = np.column_stack([perf_sec, score_beat])
 
-    nested = run_evaluation(
+    metrics = run_evaluation(
         mm,
         gt=gt,
         tolerances=TOLERANCES_IN_BEATS,
-        musical_beat=piece.musical_beat,
         domain="score",
         debug=True,
         save_dir=run_dir,
@@ -281,9 +277,9 @@ def run_piece(
         segment_duration=SEGMENT_DURATION,
         threshold=threshold,
     )
-    nested["tracked"] = bool(tracking["tracked"])
-    nested["max_deviation"] = float(tracking["max_deviation"])
-    nested["n_failed_segments"] = int(tracking["n_failed"])
+    metrics["tracked"] = bool(tracking["tracked"])
+    metrics["max_deviation"] = float(tracking["max_deviation"])
+    metrics["n_failed_segments"] = int(tracking["n_failed"])
 
     if save_plots:
         plot_tracking(
@@ -298,12 +294,26 @@ def run_piece(
     # Whether this piece actually got a measured tempo. False both when the
     # entry never asked and when it asked and the fold had none — the run
     # summary separates the two, since only the second is worth reporting.
-    nested["used_estimated_bpm"] = tempo is not None
+    metrics["used_estimated_bpm"] = tempo is not None
 
     with open(run_dir / f"{index}.json", "w") as f:
-        json.dump(nested, f, indent=4, default=float)
+        json.dump(metrics, f, indent=4, default=float)
 
-    return flatten_metrics(nested), nested
+    return metrics
+
+
+def scoring_parts() -> dict:
+    """What this file contributes to a score, for the evaluation key.
+
+    The tracked-verdict thresholds and the function that resolves ground truth
+    and calls the evaluation. Anything added here that decides a number belongs
+    in this dict too; see provenance.py.
+    """
+    return {
+        "TRACKING_THRESHOLD": TRACKING_THRESHOLD,
+        "SEGMENT_DURATION": SEGMENT_DURATION,
+        "run_piece": run_piece,
+    }
 
 
 def fold_file_label(fold) -> str:
@@ -468,10 +478,17 @@ def evaluate_submission(
             "piece_id": piece.piece_id,
             "dataset": piece.dataset,
             "title": piece.title,
+            "performance_bpm": piece.performance_tempo,
         }
+        # The bytes this piece is scored with, for the evaluation key. Taken
+        # before the run, so a piece that crashes still names its data.
+        try:
+            record["data_sha256"] = piece_data_sha256(piece, input_type)
+        except OSError:
+            record["data_sha256"] = None
         try:
             with piece_time_budget(piece_timeout):
-                flat, _ = run_piece(
+                flat = run_piece(
                     method,
                     piece,
                     input_type,
@@ -498,7 +515,7 @@ def evaluate_submission(
         no_tempo = estimated_bpm and not flat.get("used_estimated_bpm")
         print(
             f"  {'TRACKED' if flat.get('tracked') else 'FAILED '}"
-            f"  beat_median={flat.get('beat_median', float('nan')):.3f}"
+            f"  median_b={flat.get('median_b', float('nan')):.3f}"
             f"  max_dev={flat.get('max_deviation', float('nan')):.3f}b"
             + ("  (no estimated_bpm in the fold: used the score's tempo)"
                if no_tempo else "")
@@ -530,6 +547,7 @@ def evaluate_submission(
             f"python matchmaker_eval/make_folds.py --from-repo"
         )
 
+    fold_sha256 = sha256_of(fold_path(fold))
     metrics = {
         "submission": name,
         "method": method,
@@ -546,10 +564,16 @@ def evaluate_submission(
         "metadata": metadata,
         "fold": str(fold),
         "fold_file": fold_file_label(fold),
-        "fold_sha256": sha256_of(fold_path(fold)),
+        "fold_sha256": fold_sha256,
         "input_type": input_type,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "environment": environment_info(),
+        # The conditions these numbers were scored under, as one key. Rows
+        # with the same key are comparable; see provenance.py. On a shard it
+        # covers that shard's pieces only, and merge_shards.py recomputes it.
+        "evaluation": evaluation_record(
+            code_components(fold_sha256, scoring_parts()), piece_records
+        ),
         "n_pieces": len(pieces),
         "fold_size": fold_size,
         # A partial run — one shard, --limit, or a fold with unusable pieces —

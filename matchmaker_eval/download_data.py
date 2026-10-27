@@ -1,17 +1,25 @@
 """Download benchmark datasets for matchmaker-benchmark.
 
 Usage:
-    python scripts/download_data.py                     # all datasets
-    python scripts/download_data.py --dataset asap
-    python scripts/download_data.py --data-dir ~/my_data
+    python matchmaker_eval/download_data.py             # all, into $MATCHMAKER_DATA_DIR
+    python matchmaker_eval/download_data.py --dataset asap
+    python matchmaker_eval/download_data.py --data-dir ~/my_data
 """
+
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
 import shutil
 import tarfile
 import zipfile
-from pathlib import Path
 from urllib.request import urlretrieve
+
+from matchmaker_eval.folds import DATA_ROOT
 
 # TODO: update URLs when data hosting is finalized
 DATASETS = {
@@ -29,7 +37,7 @@ DATASETS = {
     },
 }
 
-DEFAULT_DATA_DIR = Path("~/datasets").expanduser()
+DEFAULT_DATA_DIR = DATA_ROOT
 
 
 def download_dataset(name: str, data_dir: Path) -> None:

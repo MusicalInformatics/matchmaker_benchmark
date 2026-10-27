@@ -7,31 +7,41 @@ Mirrors test_audio.py structure:
   - Computes event-pooled summary (tracked-only)
 """
 
+# Support package imports when this file is run directly as a script.
+import sys
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import json
-import sys
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import partitura as pt
 
-from eval import run_evaluation
+from matchmaker_eval.eval import run_evaluation
 from matchmaker import Matchmaker
 from matchmaker.utils.eval import resolve_gt
-from folds import explain_missing_dataset, nested_dataset_root
-from methods import available_methods, default_kwargs, processor_for
-from sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
-from utils import (
+from matchmaker_eval.folds import (
+    DATA_REPO_DATASETS,
+    data_repo_metadata,
+    explain_missing_dataset,
+    nested_dataset_root,
+)
+from matchmaker_eval.methods import available_methods, default_kwargs, processor_for
+from matchmaker_eval.sweeps import log_summary, sweep_entity, sweep_kwargs, sweep_project
+from matchmaker_eval.utils import (
     TOLERANCES_IN_BEATS,
     SymbolicEvalConfig,
     compute_event_pooled_summary,
     save_config,
     save_results_to_csv,
 )
-from verify_tracking import check_tracking, plot_tracking
+from matchmaker_eval.verify_tracking import check_tracking, plot_tracking
 
 from tabulate import tabulate
 import wandb
@@ -69,21 +79,7 @@ TEMPO_DEPENDENT_METHODS = ["pfkorz"]
 
 TEMPO_METADATA_PATH = WORKING_DIR / "data/perf_tempo_estimate"
 
-DISPLAY_COLUMNS = [
-    "Index",
-    "Piece",
-    "beat_mean",
-    "beat_median",
-    "beat_0.1b",
-    "beat_0.5b",
-    "beat_1.0b",
-    "ms_mean",
-    "ms_median",
-    "ms_300ms",
-    "ms_1000ms",
-    "sparc",
-    "tracked",
-]
+DISPLAY_COLUMNS = ["Index", "Piece", "mean_b", "median_b", "accuracy_0.3b", "smoothness", "tracked"]
 
 
 def print_summary_table(results: dict):
@@ -96,10 +92,16 @@ def run_tests_and_eval_by_dataset(
     dataset_type, method, run_dir=None, save_plots=True, matchmaker_kwargs=None
 ):
     """Run symbolic alignment for all pieces in a dataset."""
-    metadata = pd.read_csv(METADATA_PATH[dataset_type])
     is_valid = dataset_type in ("valid", "example")
+    from_data_repo = dataset_type in DATA_REPO_DATASETS
+    if from_data_repo:
+        # the data repository's metadata; its paths are absolute, so the
+        # joins below leave them unchanged
+        metadata = pd.DataFrame(data_repo_metadata(dataset_type))
+    else:
+        metadata = pd.read_csv(METADATA_PATH[dataset_type])
 
-    if not is_valid:
+    if not is_valid and not from_data_repo:
         tempo_metadata_fn = TEMPO_METADATA_PATH / f"{dataset_type}_tempo_estimates.csv"
         tempo_metadata = pd.read_csv(tempo_metadata_fn)
 
@@ -127,7 +129,9 @@ def run_tests_and_eval_by_dataset(
 
         print(f"[{i}/{len(metadata)}] {row.title}")
 
-        if method in TEMPO_DEPENDENT_METHODS and not is_valid:
+        if method in TEMPO_DEPENDENT_METHODS and from_data_repo:
+            tempo_estimate = float(row.estimated_bpm)
+        elif method in TEMPO_DEPENDENT_METHODS and not is_valid:
             tempo_estimate = tempo_metadata.loc[tempo_metadata["midi_performance_file"] == row.midi_performance, "estimated_bpm"].values[0]
         else:
             tempo_estimate = None
@@ -157,7 +161,10 @@ def run_tests_and_eval_by_dataset(
             wp_perf_sec = mm._wp_perf_to_seconds(wp[0].astype(float))
             wp = np.stack([wp_perf_sec, wp[1].astype(float)])
 
-            ps, sb = resolve_gt(match_path, mm.score_part.note_array())
+            # GT times from the MIDI file the follower streams (see resolve_gt)
+            ps, sb = resolve_gt(
+                match_path, mm.score_part.note_array(), performance=str(perf_midi)
+            )
             gt = np.column_stack([ps, sb])
 
             wp_T = wp.T if wp.shape[0] == 2 else wp
@@ -182,16 +189,7 @@ def run_tests_and_eval_by_dataset(
             nested["max_deviation"] = float(tracking["max_deviation"])
             nested["n_failed_segments"] = int(tracking["n_failed"])
 
-            # Flatten nested {"beat": {...}, "ms": {...}} for the per-piece results
-            # table (matches test_audio columns); the per-piece JSON stays nested.
-            piece_result = {}
-            for k, v in nested.get("beat", {}).items():
-                piece_result[f"beat_{k}"] = v
-            for k, v in nested.get("ms", {}).items():
-                piece_result[f"ms_{k}"] = v
-            for k, v in nested.items():
-                if k not in ("beat", "ms"):
-                    piece_result[k] = v
+            piece_result = nested.copy()
 
             # Save WP/GT — column order: perf_sec, score_beat
             if run_dir is not None:
@@ -199,7 +197,7 @@ def run_tests_and_eval_by_dataset(
                     run_dir / f"wp_{i}.tsv",
                     wp_T,
                     delimiter="\t",
-                    fmt="%.6f",
+                    fmt="%.17g",  # full precision: the pooled summary re-reads these
                     header="perf_sec\tscore_beat",
                     comments="",
                 )
@@ -207,7 +205,7 @@ def run_tests_and_eval_by_dataset(
                     run_dir / f"gt_{i}.tsv",
                     gt,
                     delimiter="\t",
-                    fmt="%.6f",
+                    fmt="%.17g",  # full precision: the pooled summary re-reads these
                     header="perf_sec\tscore_beat",
                     comments="",
                 )
