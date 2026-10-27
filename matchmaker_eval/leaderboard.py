@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 from matchmaker.utils.eval import TOLERANCES_IN_BEATS
 
 from matchmaker_eval.folds import LEADERBOARD_FOLD, REPO_ROOT
+from matchmaker_eval.provenance import SHARED_COMPONENTS
 from matchmaker_eval.retract import read_retractions
 
 RESULTS_DIR = REPO_ROOT / "results"
@@ -265,31 +266,64 @@ def dataset_boards(leaderboard: dict) -> dict:
 
 
 def split_by_conditions(rows: list) -> tuple:
-    """(current key, components, rows scored under it, rows scored otherwise).
+    """(conditions per input type, rows scored under them, rows scored otherwise).
 
     The current conditions are those of the most recently evaluated row: every
     run is scored by the code, data and fold of its moment, so the newest run
-    is the one that reflects them. A row with any other key — or none, from
-    before keys existed — was scored under conditions that have since changed
-    and is not ranked against the rest. It is kept, unranked, with the
-    components that differ, so the page can say what it is waiting for.
+    is the one that reflects them. MIDI and audio stream different files, so
+    their keys always differ in ``data_sha256``: each input type has its own
+    current key, the newest among its rows that share the newest run's code
+    components (fold, scoring, matchmaker, partitura). Every ranked row,
+    whichever its input type, therefore shares those.
+
+    A row with any other key — or none, from before keys existed — was scored
+    under conditions that have since changed and is not ranked against the
+    rest. It is kept, unranked, with the components that differ, so the page
+    can say what it is waiting for.
 
     When no row carries a key at all, nothing can be told apart and every row
     is treated as current: the board then reads as it did before keys.
     """
     if not rows:
-        return None, {}, [], []
-    newest = max(rows, key=lambda row: row.get("evaluated") or "")
-    key, components = newest.get("evaluation_key"), newest.get("evaluation") or {}
-    current = [row for row in rows if row.get("evaluation_key") == key]
-    earlier = [row for row in rows if row.get("evaluation_key") != key]
-    for row in earlier:
+        return {}, [], []
+
+    def evaluated(row):
+        return row.get("evaluated") or ""
+
+    def code(row):
         theirs = row.get("evaluation") or {}
+        return {name: theirs.get(name) for name in SHARED_COMPONENTS}
+
+    newest_code = code(max(rows, key=evaluated))
+    conditions = {}
+    for input_type in sorted({row["input_type"] for row in rows}):
+        same_code = [
+            row for row in rows
+            if row["input_type"] == input_type and code(row) == newest_code
+        ]
+        if same_code:
+            latest = max(same_code, key=evaluated)
+            conditions[input_type] = {
+                "key": latest.get("evaluation_key"),
+                "components": latest.get("evaluation") or {},
+            }
+
+    current, earlier = [], []
+    for row in rows:
+        reference = conditions.get(row["input_type"])
+        if reference and row.get("evaluation_key") == reference["key"]:
+            current.append(row)
+            continue
+        earlier.append(row)
+        theirs = row.get("evaluation") or {}
+        # Without a current key of its own input type, only the code components
+        # can be compared: another input type's data hash says nothing here.
+        ours = reference["components"] if reference else newest_code
+        names = set(ours) | set(theirs) if reference else SHARED_COMPONENTS
         row["evaluation_changed"] = sorted(
-            name for name in set(components) | set(theirs)
-            if components.get(name) != theirs.get(name)
-        )
-    return key, components, current, earlier
+            name for name in names if ours.get(name) != theirs.get(name)
+        ) if row.get("evaluation_key") else []
+    return conditions, current, earlier
 
 
 def rank(rows: list) -> list:
@@ -301,7 +335,7 @@ def rank(rows: list) -> list:
 
 def build(fold: str = LEADERBOARD_FOLD) -> dict:
     rows, skipped = collect(fold=fold)
-    key, components, rows, earlier = split_by_conditions(rows)
+    conditions, rows, earlier = split_by_conditions(rows)
     rank(rows)
     earlier.sort(key=sort_key)
     for row in earlier:
@@ -321,10 +355,16 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
     return {
         "fold": fold,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        # Every ranked entry was scored under these conditions. Cite the key
-        # with the numbers; results/archive/<key>/ keeps them.
-        "evaluation_key": key,
-        "evaluation_conditions": components,
+        # Every ranked entry was scored under the conditions of its input
+        # type. Cite its key with the numbers; results/archive/<key>/ keeps
+        # them.
+        "evaluation_keys": {
+            input_type: condition["key"] for input_type, condition in conditions.items()
+        },
+        "evaluation_conditions": {
+            input_type: condition["components"]
+            for input_type, condition in conditions.items()
+        },
         "ranking": "tracking_rate desc, then median_b asc",
         "metrics": {
             "tracking_rate": "share of pieces followed to the end within tolerance",
@@ -337,7 +377,7 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
             "estimated_bpm": "given the performance tempo rather than only the score tempo",
             "evaluation_key": "hash of the conditions a row was scored under "
             "(fold, data files, scoring code, matchmaker sources, partitura); "
-            "rows are only ranked against rows with the same key",
+            "rows are only ranked under the current key of their input type",
         },
         "entries": rows,
         # Scored under other conditions than the entries above, so not ranked
@@ -393,31 +433,38 @@ def write(leaderboard: dict) -> list:
         if stale.name not in written and stale.suffix in (".json", ".csv"):
             stale.unlink()
 
-    if leaderboard.get("evaluation_key"):
-        written += archive(leaderboard)
+    for input_type, key in leaderboard.get("evaluation_keys", {}).items():
+        if key:
+            written += archive(leaderboard, input_type)
     return written
 
 
-def archive(leaderboard: dict) -> list:
-    """Keep this leaderboard under its evaluation key. Returns what was written.
+def archive(leaderboard: dict, input_type: str) -> list:
+    """Keep one input type's table under its evaluation key. Returns what was written.
 
-    ``results/archive/<key>/`` holds the ranked board of that key: rewritten
+    ``results/archive/<key>/`` holds the entries of that key, ranked among
+    themselves: rewritten
     while the key is current, untouched once a newer key takes over. A paper
     that cites a key can therefore always point at the exact table it took
     its numbers from, and a reader can check them against the conditions
     recorded beside it. ``results/archive/index.json`` lists every key with
     when it was first and last published.
     """
-    key = leaderboard["evaluation_key"]
+    key = leaderboard["evaluation_keys"][input_type]
+    conditions = leaderboard["evaluation_conditions"][input_type]
     archive_dir = RESULTS_DIR / ARCHIVE_NAME
     index_path = archive_dir / "index.json"
     target = archive_dir / key
     target.mkdir(parents=True, exist_ok=True)
     board = {
-        **{k: leaderboard[k] for k in (
-            "fold", "generated", "evaluation_key", "evaluation_conditions",
-            "ranking", "metrics", "entries",
-        )},
+        **{k: leaderboard[k] for k in ("fold", "generated")},
+        "input_type": input_type,
+        "evaluation_key": key,
+        "evaluation_conditions": conditions,
+        **{k: leaderboard[k] for k in ("ranking", "metrics")},
+        "entries": rank([
+            dict(row) for row in leaderboard["entries"] if row["input_type"] == input_type
+        ]),
     }
     write_pair(board, target / "leaderboard.json", target / "leaderboard.csv", CSV_COLUMNS)
 
@@ -426,12 +473,16 @@ def archive(leaderboard: dict) -> list:
         index = json.loads(index_path.read_text()).get("archives", [])
     entry = next((e for e in index if e["key"] == key), None)
     if entry is None:
-        entry = {"key": key, "first_published": leaderboard["generated"]}
+        entry = {
+            "key": key,
+            "input_type": input_type,
+            "first_published": leaderboard["generated"],
+        }
         index.append(entry)
     entry.update({
         "last_updated": leaderboard["generated"],
-        "n_entries": len(leaderboard["entries"]),
-        "conditions": leaderboard["evaluation_conditions"],
+        "n_entries": len(board["entries"]),
+        "conditions": conditions,
     })
     index.sort(key=lambda e: e["first_published"])
     index_path.write_text(json.dumps({"archives": index}, indent=2) + "\n")
@@ -468,9 +519,12 @@ def render_table(leaderboard: dict) -> str:
         lines.append(
             "* given the performance's tempo, not just the score's notated one"
         )
-    if leaderboard.get("evaluation_key"):
+    keys = leaderboard.get("evaluation_keys") or {}
+    if any(keys.values()):
         lines.append("")
-        lines.append(f"evaluation key {leaderboard['evaluation_key']}")
+        lines.append("evaluation key " + ", ".join(
+            f"{input_type} {key}" for input_type, key in keys.items() if key
+        ))
     for row in leaderboard.get("earlier_conditions", []):
         changed = ", ".join(row.get("evaluation_changed") or []) or "no key"
         lines.append(

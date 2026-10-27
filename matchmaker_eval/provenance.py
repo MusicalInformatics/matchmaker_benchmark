@@ -11,7 +11,7 @@ numbers — apart from the follower itself — was the same. That is:
                         tracking modules, and the parts of run_submission.py
                         that decide ground truth and the tracked verdict
     matchmaker_sha256   the installed matchmaker sources. They hold the ground
-                        truth resolution, the beat/ms errors, the tracking
+                        truth resolution, the beat errors, the tracking
                         windows and SPARC, and the reference followers
     partitura           how every score and match file is parsed
 

@@ -180,7 +180,9 @@ class TestMerging:
             merge(tmp_path / "shards", tmp_path / "out")
 
 
-def entry(name: str, key, evaluated: str, components=None, tracking=1.0) -> dict:
+def entry(
+    name: str, key, evaluated: str, components=None, tracking=1.0, input_type="midi"
+) -> dict:
     """A complete eval-fold metrics.json, as leaderboard.collect() reads it."""
     return {
         "submission": name,
@@ -189,7 +191,7 @@ def entry(name: str, key, evaluated: str, components=None, tracking=1.0) -> dict
         "metadata": {"name": name, "authors": ["a"]},
         "fold": "eval",
         "fold_sha256": "f" * 64,
-        "input_type": "midi",
+        "input_type": input_type,
         "timestamp": evaluated,
         "environment": {"matchmaker": "0.3.0", "matchmaker_commit": "c" * 40},
         "evaluation": {"key": key, "components": components or {}},
@@ -229,7 +231,7 @@ class TestTheLeaderboard:
         results(entry("old-ref", "ek1-aaaaaaaaaaaa", "2026-10-01T00:00:00+00:00", OLD))
         results(entry("new-ref", "ek1-bbbbbbbbbbbb", "2026-10-28T00:00:00+00:00", NEW, 0.5))
         board = L.build()
-        assert board["evaluation_key"] == "ek1-bbbbbbbbbbbb"
+        assert board["evaluation_keys"] == {"midi": "ek1-bbbbbbbbbbbb"}
         assert [(e["submission"], e["rank"]) for e in board["entries"]] == [("new-ref", 1)]
         (earlier,) = board["earlier_conditions"]
         assert earlier["submission"] == "old-ref"
@@ -241,7 +243,9 @@ class TestTheLeaderboard:
         results(entry("new-ref", "ek1-bbbbbbbbbbbb", "2026-10-28T00:00:00+00:00", NEW))
         board = L.build()
         assert [e["submission"] for e in board["entries"]] == ["new-ref"]
-        assert [e["submission"] for e in board["earlier_conditions"]] == ["legacy"]
+        (legacy,) = board["earlier_conditions"]
+        assert legacy["submission"] == "legacy"
+        assert legacy["evaluation_changed"] == []
 
     def test_without_any_key_every_row_is_ranked(self, results):
         results(entry("a", None, "2026-10-01T00:00:00+00:00"))
@@ -249,6 +253,35 @@ class TestTheLeaderboard:
         board = L.build()
         assert [e["rank"] for e in board["entries"]] == [1, 2]
         assert board["earlier_conditions"] == []
+
+    def test_midi_and_audio_rank_together_under_their_own_keys(self, results):
+        results(entry("midi-ref", "ek1-aaaaaaaaaaaa", "2026-10-28T00:00:00+00:00", OLD))
+        results(entry(
+            "audio-ref", "ek1-cccccccccccc", "2026-10-28T01:00:00+00:00",
+            {**OLD, "data_sha256": "a" * 64}, 0.5, "audio",
+        ))
+        board = L.build()
+        assert board["evaluation_keys"] == {
+            "audio": "ek1-cccccccccccc", "midi": "ek1-aaaaaaaaaaaa",
+        }
+        assert [(e["submission"], e["rank"]) for e in board["entries"]] == [
+            ("midi-ref", 1), ("audio-ref", 2),
+        ]
+        assert board["earlier_conditions"] == []
+
+    def test_an_input_type_scored_by_older_code_is_not_ranked(self, results):
+        results(entry(
+            "audio-ref", "ek1-cccccccccccc", "2026-10-01T00:00:00+00:00",
+            {**OLD, "data_sha256": "a" * 64}, input_type="audio",
+        ))
+        results(entry("midi-ref", "ek1-bbbbbbbbbbbb", "2026-10-28T00:00:00+00:00", NEW))
+        board = L.build()
+        assert board["evaluation_keys"] == {"midi": "ek1-bbbbbbbbbbbb"}
+        assert [e["submission"] for e in board["entries"]] == ["midi-ref"]
+        (earlier,) = board["earlier_conditions"]
+        assert earlier["submission"] == "audio-ref"
+        # Compared on code only: MIDI's data hash says nothing about audio.
+        assert earlier["evaluation_changed"] == ["scoring_sha256"]
 
     def test_the_key_is_a_csv_column(self, results):
         results(entry("new-ref", "ek1-bbbbbbbbbbbb", "2026-10-28T00:00:00+00:00", NEW))
@@ -272,6 +305,24 @@ class TestTheArchive:
         index = json.loads((archive / "index.json").read_text())["archives"]
         assert [a["key"] for a in index] == ["ek1-aaaaaaaaaaaa", "ek1-bbbbbbbbbbbb"]
         assert index[1]["conditions"]["scoring_sha256"] == "n" * 64
+        assert index[1]["input_type"] == "midi"
+
+    def test_each_input_type_is_archived_under_its_own_key(self, results):
+        results(entry("midi-ref", "ek1-aaaaaaaaaaaa", "2026-10-28T00:00:00+00:00", OLD))
+        results(entry(
+            "audio-ref", "ek1-cccccccccccc", "2026-10-28T01:00:00+00:00",
+            {**OLD, "data_sha256": "a" * 64}, 0.5, "audio",
+        ))
+        L.write(L.build())
+        archive = L.RESULTS_DIR / "archive"
+        audio = json.loads((archive / "ek1-cccccccccccc" / "leaderboard.json").read_text())
+        assert audio["input_type"] == "audio"
+        assert audio["evaluation_conditions"]["data_sha256"] == "a" * 64
+        assert [(e["submission"], e["rank"]) for e in audio["entries"]] == [("audio-ref", 1)]
+        index = json.loads((archive / "index.json").read_text())["archives"]
+        assert {a["key"]: a["input_type"] for a in index} == {
+            "ek1-aaaaaaaaaaaa": "midi", "ek1-cccccccccccc": "audio",
+        }
 
     def test_nothing_is_archived_without_a_key(self, results):
         results(entry("legacy", None, "2026-10-01T00:00:00+00:00"))

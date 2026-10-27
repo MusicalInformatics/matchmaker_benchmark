@@ -638,10 +638,12 @@
       <h2>Evaluation key</h2>
       <p>
         Every ranked row was scored under the same conditions: the same fold,
-        data files, scoring code, matchmaker sources and score parser. The key
-        above is a hash of all of them. Cite it with any number you take from
-        here; <a href="archive/index.json">every key's table is archived</a>
-        and stays at <code>archive/&lt;key&gt;/leaderboard.json</code>.
+        scoring code, matchmaker sources and score parser, and, within an input
+        type, the same data files. MIDI and audio stream different files, so
+        each has its own key above, a hash of all of these. Cite the key of the
+        row's input type with any number you take from here;
+        <a href="archive/index.json">every key's table is archived</a> and
+        stays at <code>archive/&lt;key&gt;/leaderboard.json</code>.
       </p>
     </section>
     <section>
@@ -1457,10 +1459,11 @@ loadBoard().then((board) => {
     ["entries", entries.length],
     ["generated", (board.generated || "").replace("T", " ").replace("+00:00", " UTC")],
   ].map(([k, v]) => `<span>${k} <b>${escapeHtml(v)}</b></span>`).join("")
-    + (board.evaluation_key
-      ? `<span>evaluation key <b><a href="archive/${encodeURIComponent(board.evaluation_key)}/leaderboard.json"
-           title="the archived table for this key"><code>${escapeHtml(board.evaluation_key)}</code></a></b></span>`
-      : "");
+    // One key per input type: MIDI and audio stream different files.
+    + Object.entries(board.evaluation_keys || {}).filter(([, key]) => key).map(([inputType, key]) =>
+      `<span>${inputType === "midi" ? "MIDI" : escapeHtml(inputType)} key <b><a href="archive/${encodeURIComponent(key)}/leaderboard.json"
+           title="the archived table for this key"><code>${escapeHtml(key)}</code></a></b></span>`
+    ).join("");
 
   // Rows scored under other conditions are listed, never ranked against the
   // rest: their numbers are not comparable until they are re-run.
