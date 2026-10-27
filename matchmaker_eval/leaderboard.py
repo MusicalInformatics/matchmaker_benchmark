@@ -63,31 +63,11 @@ def dataset_paths(dataset: str) -> tuple:
 #: (column, path into the metrics record). Kept flat and explicit so the CSV
 #: header is stable across benchmark versions.
 CSV_COLUMNS = [
-    "rank",
-    "submission",
-    "kind",
-    "name",
-    "authors",
-    "input_type",
-    "tracking_rate",
-    "beat_median",
-    "beat_mean",
-    "beat_0.3b",
-    "beat_0.5b",
-    "beat_1.0b",
-    "ms_median",
-    "ms_300ms",
-    "beat_median_all",
-    "ms_median_all",
-    "sparc",
-    "sparc_n_windows",
-    "sparc_n_valid_windows",
-    "sparc_valid_window_fraction",
-    "rtf",
-    "n_pieces",
-    "n_tracked",
-    "estimated_bpm",
-    "evaluated",
+    "rank", "submission", "kind", "name", "authors", "input_type",
+    "tracking_rate", "mean_b", "median_b", "std_b", "accuracy_b",
+    "skewness", "kurtosis", "smoothness", "median_b_all", "rtf",
+    "feature_latency_ms", "inference_latency_ms", "n_pieces", "n_tracked",
+    "estimated_bpm", "evaluated",
 ]
 
 #: The per-dataset CSV adds where the entry stands on the whole fold, so a
@@ -127,30 +107,15 @@ def metric_columns(record: dict) -> dict:
     as the headline column and means exactly the same thing.
     """
     tracked = record.get("summary_tracked", {})
-    beat = tracked.get("beat", {})
-    ms = tracked.get("ms", {})
-    # Accuracy over *every* piece, lost ones included. Without it a submission
-    # that tracked nothing would be a row of blanks, and a submission that
-    # tracked two easy pieces would look flawless.
     overall = record.get("summary_all", {})
-    beat_all = overall.get("beat", {})
-    ms_all = overall.get("ms", {})
     return {
         "tracking_rate": overall.get("tracking_rate", 0.0),
-        "beat_median": beat.get("median"),
-        "beat_mean": beat.get("mean"),
-        "beat_0.3b": beat.get("0.3b"),
-        "beat_0.5b": beat.get("0.5b"),
-        "beat_1.0b": beat.get("1.0b"),
-        "ms_median": ms.get("median"),
-        "ms_300ms": ms.get("300ms"),
-        "beat_median_all": beat_all.get("median"),
-        "ms_median_all": ms_all.get("median"),
-        "sparc": tracked.get("sparc"),
-        "sparc_n_windows": tracked.get("sparc_n_windows"),
-        "sparc_n_valid_windows": tracked.get("sparc_n_valid_windows"),
-        "sparc_valid_window_fraction": tracked.get("sparc_valid_window_fraction"),
-        "rtf": tracked.get("rtf"),
+        **{key: tracked.get(key) for key in (
+            "mean_b", "median_b", "std_b", "skewness", "kurtosis", "smoothness",
+            "rtf", "feature_latency_ms", "inference_latency_ms",
+        )},
+        "accuracy_b": tracked.get("accuracy_b", {}),
+        "median_b_all": overall.get("median_b"),
         "n_pieces": record.get("n_pieces", 0),
         "n_tracked": record.get("n_tracked", 0),
         "n_failed": record.get("n_failed", 0),
@@ -201,10 +166,10 @@ def row_from_metrics(metrics: dict) -> dict:
 
 def sort_key(row: dict):
     """Tracking rate first (descending), then median beat error (ascending)."""
-    beat_median = row.get("beat_median")
+    median_b = row.get("median_b")
     return (
         -(row.get("tracking_rate") or 0.0),
-        beat_median if beat_median is not None else float("inf"),
+        median_b if median_b is not None else float("inf"),
         row["submission"],
     )
 
@@ -232,6 +197,9 @@ def collect(results_dir: Path = None, fold: str = LEADERBOARD_FOLD):
                 f"{path}: partial run ({metrics['n_pieces']}/"
                 f"{metrics.get('fold_size')} pieces) — rerun the full fold"
             )
+            continue
+        if "smoothness" not in metrics.get("summary_all", {}):
+            skipped.append(f"{path}: previous metric format — re-evaluate this entry")
             continue
         rows.append(row_from_metrics(metrics))
 
@@ -295,17 +263,16 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
     return {
         "fold": fold,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "ranking": "tracking_rate desc, then beat_median asc",
+        "ranking": "tracking_rate desc, then median_b asc",
         "metrics": {
             "tracking_rate": "share of pieces followed to the end within tolerance",
-            "beat_median": "median |beat error| (perf->score), pooled over "
-            "tracked pieces",
-            "ms_median": "median |ms error| (score->perf), pooled over tracked pieces",
-            "beat_median_all": "median |beat error| over every piece, lost "
-            "ones included",
+            "median_b": "median absolute beat error, pooled over tracked pieces",
+            "mean_b": "mean absolute beat error, pooled over tracked pieces",
+            "accuracy_b": "share of onsets within each beat-error tolerance",
+            "smoothness": "mean SPARC smoothness across tracked pieces; higher is smoother",
+            "median_b_all": "median absolute beat error over every piece",
             "rtf": "real-time factor: processing time / performance duration",
-            "estimated_bpm": "the follower was given the performance's tempo "
-            "instead of the score's notated one — marked * in the table",
+            "estimated_bpm": "given the performance tempo rather than only the score tempo",
         },
         "entries": rows,
         "skipped": skipped,
@@ -335,7 +302,7 @@ def write_pair(board: dict, json_path: Path, csv_path: Path, columns: list) -> N
         writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for row in board["entries"]:
-            writer.writerow(row)
+            writer.writerow({**row, "accuracy_b": json.dumps(row.get("accuracy_b", {}))})
 
 
 def write(leaderboard: dict) -> list:
@@ -365,7 +332,7 @@ def render_table(leaderboard: dict) -> str:
         return "(no submissions evaluated on the eval fold yet)"
     header = (
         f"{'#':>2}  {'entry':26} {'kind':10} {'in':5} {'track':>6} "
-        f"{'beat_med':>9} {'ms_med':>8}  {'(all pieces)':>12}"
+        f"{'beat_med':>9} {'smooth':>8}  {'(all pieces)':>12}"
     )
     lines = [header, "-" * len(header)]
     for row in entries:
@@ -380,8 +347,8 @@ def render_table(leaderboard: dict) -> str:
             f"{row['rank']:>2}  {marked:26} {row['kind']:10} "
             f"{row['input_type']:5} "
             f"{row['tracking_rate']:>6.2f} "
-            f"{fmt(row.get('beat_median'), 9)} {fmt(row.get('ms_median'), 8, 0)}  "
-            f"{fmt(row.get('beat_median_all'), 12)}"
+            f"{fmt(row.get('median_b'), 9)} {fmt(row.get('smoothness'), 8, 4)}  "
+            f"{fmt(row.get('median_b_all'), 12)}"
         )
     if any(row.get("estimated_bpm") for row in entries):
         lines.append("")

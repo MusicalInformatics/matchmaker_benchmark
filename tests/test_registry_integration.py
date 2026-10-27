@@ -288,7 +288,7 @@ class TestOptionalLatencyStats:
         input_type = "audio"
 
         def get_latency_stats(self):
-            return {"f_avg_latency": 1.5, "i_avg_latency": 0.1}
+            return {"feature_latency_ms": 1.5, "inference_latency_ms": 0.1}
 
     class _Midi:
         input_type = "midi"
@@ -305,8 +305,8 @@ class TestOptionalLatencyStats:
         from eval import latency_stats
 
         assert latency_stats(self._WithLatency()) == {
-            "f_avg_latency": 1.5,
-            "i_avg_latency": 0.1,
+            "feature_latency_ms": 1.5,
+            "inference_latency_ms": 0.1,
         }
 
     def test_midi_runs_are_left_alone(self):

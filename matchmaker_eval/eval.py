@@ -20,11 +20,9 @@ import librosa
 import numpy as np
 import pandas as pd
 import partitura as pt
-import scipy
 from matchmaker import Matchmaker
 from matchmaker.utils.eval import (
     evaluate_alignment,
-    get_evaluation_results,
     resolve_gt,
     transfer_positions,
 )
@@ -33,7 +31,6 @@ from partitura.musicanalysis.performance_codec import get_time_maps_from_alignme
 
 from matchmaker_eval.utils import (
     TOLERANCES_IN_BEATS,
-    TOLERANCES_IN_MS,
     AudioEvalConfig,
     save_debug_results,
 )
@@ -74,9 +71,8 @@ def run_evaluation(
 ) -> dict:
     """Evaluate a completed Matchmaker run against ground truth.
 
-    When domain="score" (default), returns beat-based metrics as primary
-    and ms-based metrics under "ms" key. When domain="performance",
-    returns ms-based metrics only (legacy behavior).
+    Return matchmaker's beat accuracy and scalar smoothness fields directly,
+    adding only runtime and audio latency measurements.
 
     Parameters
     ----------
@@ -90,15 +86,15 @@ def run_evaluation(
     debug : bool
         Whether to save debug outputs.
     domain : str
-        "score" (default, beat-based primary) or "performance" (ms-based, legacy).
+        Retained for runner compatibility; results use the shared metric schema.
 
     Returns
     -------
     dict
-        Evaluation results. If domain="score", includes both beat and ms metrics.
+        Beat accuracy, scalar smoothness, runtime, and available latency metrics.
     """
     if tolerances is None:
-        tolerances = TOLERANCES_IN_BEATS if domain == "score" else TOLERANCES_IN_MS
+        tolerances = TOLERANCES_IN_BEATS
     if not mm._has_run:
         raise ValueError("Must call run() before evaluation")
 
@@ -108,31 +104,13 @@ def run_evaluation(
 
     perf_annots, score_annots_beats = resolve_gt(gt, mm.score_part.note_array())
 
-    evaluation = evaluate_alignment(
+    eval_results = evaluate_alignment(
         score_beat,
         perf_sec,
         score_annots_beats,
         perf_annots,
-        beat_tolerances=tolerances if domain == "score" else TOLERANCES_IN_BEATS,
-        ms_tolerances=TOLERANCES_IN_MS,
-        return_details=True,
+        beat_tolerances=tolerances,
     )
-    eval_results = {
-        "beat": {
-            "mean": evaluation["mean_b"],
-            "median": evaluation["median_b"],
-            "std": evaluation["std_b"],
-            "skewness": evaluation["skewness"],
-            "kurtosis": evaluation["kurtosis"],
-            **evaluation["accuracy_b"],
-        },
-        "ms": evaluation["ms"],
-        **{
-            key: value
-            for key, value in evaluation["smoothness_details"].items()
-            if key != "sparc_windows"
-        },
-    }
 
     # Real-Time Factor (domain-independent)
     if mm.alignment_duration is not None:
@@ -311,7 +289,7 @@ def run_score_following(
         ps, sb = resolve_gt(gt, mm.score_part.note_array())
         gt_pairs = np.column_stack([ps, sb])
 
-    nested = run_evaluation(
+    results = run_evaluation(
         mm,
         gt=gt_pairs,
         tolerances=TOLERANCES_IN_BEATS,
@@ -322,17 +300,6 @@ def run_score_following(
         run_name=run_name,
         level=granularity,
     )
-    # Flatten nested {"beat": {...}, "ms": {...}} into a single dict for the
-    # per-piece results table, prefixing metric keys with beat_ / ms_.
-    results = {}
-    for k, v in nested.get("beat", {}).items():
-        results[f"beat_{k}"] = v
-    for k, v in nested.get("ms", {}).items():
-        results[f"ms_{k}"] = v
-    for k, v in nested.items():
-        if k not in ("beat", "ms"):
-            results[k] = v
-
     # Tracking verification
     try:
         wp_for_check = wp.T
@@ -350,9 +317,6 @@ def run_score_following(
         results["tracked"] = tracking["tracked"]
         results["max_deviation"] = tracking["max_deviation"]
         results["n_failed_segments"] = tracking["n_failed"]
-        nested["tracked"] = tracking["tracked"]
-        nested["max_deviation"] = tracking["max_deviation"]
-        nested["n_failed_segments"] = tracking["n_failed"]
 
         if save_plots and save_dir is not None and run_name:
             plot_tracking(
@@ -366,7 +330,7 @@ def run_score_following(
 
     if save_dir is not None and run_name and not dry_run:
         with open(Path(save_dir) / f"{run_name}.json", "w") as f:
-            json.dump(nested, f, indent=4)
+            json.dump(results, f, indent=4)
 
     return results
 
@@ -476,19 +440,8 @@ def run_offline_alignment(
 
     predicted = transfer_offline_positions(wp, perf_annots, config.frame_rate)
     predicted_beats = np.interp(predicted, score_annots, score_beats)
-    beat_res = get_evaluation_results(
-        score_beats,
-        predicted_beats,
-        total_counts=len(score_beats),
-        tolerances=TOLERANCES_IN_BEATS,
-        in_seconds=False,
+    frame_to_beat = mm.ref_frame_to_beat()
+    return evaluate_alignment(
+        frame_to_beat[wp[0].astype(int)], wp[1] / config.frame_rate,
+        score_beats, perf_annots, beat_tolerances=TOLERANCES_IN_BEATS,
     )
-    ms_res = get_evaluation_results(
-        score_annots,
-        predicted,
-        total_counts=len(score_annots),
-        tolerances=TOLERANCES_IN_MS,
-    )
-    results = {f"beat_{k}": v for k, v in beat_res.items()}
-    results.update({f"ms_{k}": v for k, v in ms_res.items()})
-    return results

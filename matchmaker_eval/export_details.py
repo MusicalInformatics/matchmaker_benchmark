@@ -65,38 +65,15 @@ PIECE_IDENTITY = (
     "tracked",
     "error",
     "used_estimated_bpm",
+    "estimated_bpm",
 )
 
 #: Order metrics are presented in. Anything not named here still appears, after
 #: these, so nothing is ever silently dropped.
 METRIC_ORDER = (
-    "beat_mean",
-    "beat_median",
-    "beat_std",
-    "beat_skewness",
-    "beat_kurtosis",
-    "beat_0.1b",
-    "beat_0.2b",
-    "beat_0.3b",
-    "beat_0.5b",
-    "beat_1.0b",
-    "beat_2.0b",
-    "ms_mean",
-    "ms_median",
-    "ms_std",
-    "ms_skewness",
-    "ms_kurtosis",
-    "ms_50ms",
-    "ms_100ms",
-    "ms_300ms",
-    "ms_500ms",
-    "ms_1000ms",
-    "ms_2000ms",
-    "max_deviation",
-    "n_failed_segments",
-    "rtf",
-    "f_avg_latency",
-    "i_avg_latency",
+    "mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis",
+    "smoothness", "max_deviation", "n_failed_segments", "rtf",
+    "feature_latency_ms", "inference_latency_ms",
 )
 
 
@@ -161,6 +138,7 @@ def export(run_dir: Path, include_paths: bool = True) -> dict:
             "dataset": piece.get("dataset"),
             "title": piece.get("title"),
             "tracked": bool(piece.get("tracked")),
+            "estimated_bpm": piece.get("estimated_bpm"),
         }
         for key in ordered_metrics(piece):
             row[key] = piece[key]
@@ -190,7 +168,7 @@ def export(run_dir: Path, include_paths: bool = True) -> dict:
         "axes": {"x": "performance time (s)", "y": "score position (beats)"},
         # Every metric the evaluation produced, in presentation order, so the
         # website can render the full table without knowing the metric set.
-        "metrics": ordered_metrics(pieces[0]) if pieces else [],
+        "metrics": list(dict.fromkeys(key for piece in pieces for key in ordered_metrics(piece))),
         # Pooled over the whole run, and per dataset in the same shape. Both
         # come from the run's own record, computed there by the one function
         # that also produces the headline row.

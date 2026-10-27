@@ -60,9 +60,9 @@ class TestTheSummary:
             "summary_all": {
                 "tracking_rate": 0.75,
                 "rtf": 0.21,
-                "beat": {"median": 0.4},
+                "median_b": 0.4,
             },
-            "summary_tracked": {"beat": {"median": 0.05}},
+            "summary_tracked": {"median_b": 0.05},
             "pieces": [
                 {"piece_id": "asap/a/a", "dataset": "asap", "tracked": True},
                 {"piece_id": "batik/b/b", "dataset": "batik", "tracked": True},

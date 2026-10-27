@@ -67,21 +67,7 @@ METADATA_PATH = {
 OUTPUT_DIR = WORKING_DIR / "output"
 TEMPO_DEPENDENT_METHODS = ["pfkorz"]
 TEMPO_METADATA_PATH = WORKING_DIR / "data/perf_tempo_estimate"
-DISPLAY_COLUMNS = [
-    "Index",
-    "Piece",
-    "beat_mean",
-    "beat_median",
-    "beat_0.3b",
-    "beat_0.5b",
-    "beat_1.0b",
-    "ms_mean",
-    "ms_median",
-    "ms_300ms",
-    "ms_1000ms",
-    "sparc",
-    "tracked",
-]
+DISPLAY_COLUMNS = ["Index", "Piece", "mean_b", "median_b", "accuracy_b", "smoothness", "tracked"]
 
 
 def report_results_to_wandb(averaged_result: dict, config: AudioEvalConfig):
