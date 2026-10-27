@@ -57,6 +57,8 @@ PRECISION = 2
 #: measurement of the follower, so it is excluded here too — otherwise it lands
 #: in the site's metric table as a boolean among the error statistics. The run's
 #: count of it is published once, alongside n_tracked.
+#: ``data_sha256`` names the bytes a piece was scored with (see provenance.py):
+#: provenance, not a measurement. It is published beside the identity fields.
 PIECE_IDENTITY = (
     "index",
     "piece_id",
@@ -66,6 +68,8 @@ PIECE_IDENTITY = (
     "error",
     "used_estimated_bpm",
     "performance_bpm",
+    "estimated_bpm",
+    "data_sha256",
 )
 
 #: Order metrics are presented in. Anything not named here still appears, after
@@ -139,6 +143,8 @@ def export(run_dir: Path, include_paths: bool = True) -> dict:
             "title": piece.get("title"),
             "tracked": bool(piece.get("tracked")),
             "performance_bpm": piece.get("performance_bpm"),
+            "estimated_bpm": piece.get("estimated_bpm"),
+            "data_sha256": piece.get("data_sha256"),
         }
         for key in ordered_metrics(piece):
             row[key] = piece[key]
@@ -159,6 +165,7 @@ def export(run_dir: Path, include_paths: bool = True) -> dict:
         "input_type": metrics["input_type"],
         "fold": metrics.get("fold"),
         "fold_sha256": metrics.get("fold_sha256"),
+        "evaluation": metrics.get("evaluation"),
         "n_pieces": metrics.get("n_pieces"),
         "n_tracked": metrics.get("n_tracked"),
         # How many pieces the follower was actually given a measured tempo for.

@@ -226,10 +226,57 @@ whose audio is never published, evaluated by maintainers on request. The fold
 mechanism is already generic (`data/folds/*.csv`, `--fold <name>`), so adding
 one is a matter of data hosting and policy, not code. It is not in place today.
 
+## The evaluation key
+
+Two rows are only comparable when everything that decides their numbers,
+apart from the follower itself, was the same. Every run records those
+conditions and hashes them into one **evaluation key**, e.g. `ek1-3f9c0a1b2d4e`:
+
+| Component | What it pins |
+| --- | --- |
+| `fold_sha256` | The fold CSV: which pieces, their paths, `estimated_bpm` |
+| `data_sha256` | The bytes of every file a piece was scored with: the score, the performance that was streamed, the ground truth |
+| `scoring_sha256` | The benchmark's scoring code: `eval.py`, `utils.py`, `verify_tracking.py`, and the thresholds and per-piece scoring in `run_submission.py` |
+| `matchmaker_sha256` | The installed matchmaker sources: ground-truth resolution, beat errors, tracking windows, SPARC, and the reference followers |
+| `partitura` | The version that parses every score and match file |
+
+They are content hashes, not commit ids, on purpose: a results commit or a
+README edit changes a commit but not a number, while any change to what is
+read or how it is scored changes the key. The `ek1` prefix names the scheme; if
+the set of components ever changes, so does the prefix.
+
+MIDI and audio runs stream different performance files, so their keys always
+differ in `data_sha256`: each input type has its own current key. The current
+conditions are set by the most recent run. Its code components (`fold_sha256`,
+`scoring_sha256`, `matchmaker_sha256`, `partitura`) apply to every input type,
+and each input type's key is that of its most recent run under them. The
+leaderboard ranks a row only when it has the current key of its input type, so
+every ranked row was scored by the same code, and rows of one input type also
+on the same data. A row with another key — from before a scoring fix, a data
+correction or a fold change — is listed below the table as scored under
+earlier conditions, with the components that differ, and rejoins the ranking
+once it is re-run.
+
+### Citing results
+
+Every published key keeps its table: `results/archive/<key>/leaderboard.json`
+(and `.csv`), the ranked entries of that key and so of one input type, also
+served on the site at `archive/<key>/leaderboard.json`, with
+`results/archive/index.json` listing each key, its input type, when it was
+first and last published, and its components. A key's archive is updated while it is current
+and frozen once a newer key takes over.
+
+So cite a number together with the key of its input type, e.g. *"tracking rate 0.84 (benchmark
+evaluation key `ek1-3f9c0a1b2d4e`)"*. Anyone can then find the exact table it
+came from, and see whether a later leaderboard was scored under the same
+conditions or not. The per-piece records of a key are in the repository's
+history at the `benchmark_commit` its rows record.
+
 ## Reproducing a leaderboard row
 
-Every `metrics.json` records the matchmaker version, the benchmark commit, and
-the SHA-256 of the fold file it ran against. To reproduce a row:
+Every `metrics.json` records the matchmaker version and commit, the benchmark
+commit, the SHA-256 of the fold file it ran against, and the evaluation key
+with its components. To reproduce a row:
 
 ```bash
 git checkout <benchmark_commit>
@@ -237,5 +284,5 @@ pip install -r submissions/<name>/requirements.txt
 python matchmaker_eval/run_submission.py submissions/<name> --fold eval
 ```
 
-If the fold hash in your run differs from the one in the published record, the
-fold changed since — the numbers are not comparable.
+If the evaluation key of your run differs from the one in the published record,
+something that decides the numbers changed since; its components say what.

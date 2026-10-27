@@ -487,6 +487,20 @@
     font-style: italic;
     font-size: 16px;
   }
+  /* Rows scored under other conditions than the ranked ones: listed, never
+     ranked against them, with what changed. */
+  .earlier {
+    margin: 18px 0 0;
+    padding: 14px 18px;
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    color: var(--ink-mute);
+    font-size: 13px;
+  }
+  .earlier h2 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+  .earlier ul { margin: 6px 0 0; padding-left: 18px; }
+  .earlier code, .provenance code { font-family: var(--mono); }
+  .provenance a { color: inherit; text-underline-offset: 2px; }
   footer {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -571,16 +585,18 @@
       <tbody id="rows"></tbody>
     </table>
     <div class="empty" id="empty" hidden></div>
+    <div class="earlier" id="earlier" hidden></div>
   </div>
 
   <footer>
     <section>
       <h2>Tracked</h2>
       <p>
-        A piece counts as tracked unless two or more 30-second segments drift
-        past the tolerance — 0.5 beats for MIDI, 1.0 for audio. A follower that
-        loses the performer produces meaningless errors, so accuracy is only
-        reported over the pieces it held onto.
+        The performance is walked in 30-second windows, one starting at every
+        annotated onset. A piece counts as tracked unless the median beat error
+        in any window exceeds the tolerance — 0.5 beats for MIDI, 1.0 for
+        audio. A follower that loses the performer produces meaningless errors,
+        so accuracy is only reported over the pieces it held onto.
       </p>
     </section>
     <section>
@@ -616,6 +632,18 @@
         dataset's, by clicking it — and the alignment of any piece against the
         ground truth. The plots are drawn here from the raw path coordinates —
         no images are stored.
+      </p>
+    </section>
+    <section>
+      <h2>Evaluation key</h2>
+      <p>
+        Every ranked row was scored under the same conditions: the same fold,
+        scoring code, matchmaker sources and score parser, and, within an input
+        type, the same data files. MIDI and audio stream different files, so
+        each has its own key above, a hash of all of these. Cite the key of the
+        row's input type with any number you take from here;
+        <a href="archive/index.json">every key's table is archived</a> and
+        stays at <code>archive/&lt;key&gt;/leaderboard.json</code>.
       </p>
     </section>
     <section>
@@ -1258,8 +1286,11 @@ function detailRow(entry) {
     ["pieces tracked", `${entry.n_tracked} of ${entry.n_pieces}`],
     ["matchmaker method", entry.method || "—"],
     ["evaluated", (entry.evaluated || "").replace("T", " ").replace("+00:00", " UTC")],
-    ["matchmaker", entry.matchmaker || "—"],
+    ["matchmaker", entry.matchmaker_commit
+      ? `${entry.matchmaker} (${entry.matchmaker_commit.slice(0, 8)})`
+      : entry.matchmaker || "—"],
     ["fold digest", (entry.fold_sha256 || "").slice(0, 16) + "…"],
+    ["evaluation key", entry.evaluation_key || "—"],
   ];
   return `
     <tr class="detail" hidden>
@@ -1427,7 +1458,28 @@ loadBoard().then((board) => {
     ["pieces", pieces],
     ["entries", entries.length],
     ["generated", (board.generated || "").replace("T", " ").replace("+00:00", " UTC")],
-  ].map(([k, v]) => `<span>${k} <b>${escapeHtml(v)}</b></span>`).join("");
+  ].map(([k, v]) => `<span>${k} <b>${escapeHtml(v)}</b></span>`).join("")
+    // One key per input type: MIDI and audio stream different files.
+    + Object.entries(board.evaluation_keys || {}).filter(([, key]) => key).map(([inputType, key]) =>
+      `<span>${inputType === "midi" ? "MIDI" : escapeHtml(inputType)} key <b><a href="archive/${encodeURIComponent(key)}/leaderboard.json"
+           title="the archived table for this key"><code>${escapeHtml(key)}</code></a></b></span>`
+    ).join("");
+
+  // Rows scored under other conditions are listed, never ranked against the
+  // rest: their numbers are not comparable until they are re-run.
+  const earlier = board.earlier_conditions || [];
+  el("earlier").hidden = earlier.length === 0;
+  el("earlier").innerHTML = earlier.length ? `
+    <h2>Not ranked: scored under earlier conditions</h2>
+    <p>These entries were evaluated before something that decides the numbers
+       changed, so they are not compared with the table above until they are
+       re-run.</p>
+    <ul>${earlier.map((e) => `
+      <li><b>${escapeHtml(e.name)}</b> (${escapeHtml(e.input_type)}) —
+        key <code>${escapeHtml(e.evaluation_key || "none")}</code>,
+        evaluated ${escapeHtml((e.evaluated || "").slice(0, 10))};
+        changed since: ${escapeHtml((e.evaluation_changed || []).join(", ") || "recorded before keys existed")}</li>`).join("")}
+    </ul>` : "";
 
   // leaderboard-<dataset>.csv sits next to leaderboard.csv wherever the page
   // found it; the datasets are whichever the entries were evaluated on.
