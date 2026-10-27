@@ -82,19 +82,30 @@ the same deal.
 
 ## Metrics
 
-Alignment is scored in both directions. The **beat error** is primary.
+The benchmark uses matchmaker's evaluation result format directly and adds tracking verdicts and aggregates. **Beat error** is primary.
 
 | Metric | Direction | Meaning |
 | --- | --- | --- |
-| `beat_median`, `beat_mean` | performance → score | Absolute error in beats, at each ground-truth performance onset. The headline number. |
-| `beat_0.3b`, `beat_0.5b`, `beat_1.0b` | performance → score | Share of onsets within that many beats. |
-| `ms_median`, `ms_300ms` | score → performance | Absolute error in milliseconds. Secondary; comparable to the score-following literature. |
-| `rtf` | — | Real-time factor: processing time / performance duration. Must be well under 1.0 to be usable live. |
-| `tracking_rate` | — | Share of pieces followed to the end (see below). |
+| `mean_b`, `median_b`, `std_b` | performance → score | Mean, median, and standard deviation of absolute score-position error, in beats. |
+| `accuracy_b` | performance → score | Fraction of annotated onsets within each beat-error tolerance, such as `0.5b`. |
+| `skewness`, `kurtosis` | — | Unitless statistics of the signed score-position error distribution. |
+| `smoothness` | — | Trajectory smoothness computed with SPARC; higher (less negative) is smoother. |
+| `rtf` | — | Processing time divided by the annotated performance span. |
+| `feature_latency_ms`, `inference_latency_ms` | — | Mean feature-extraction and inference time per frame, in milliseconds (audio). |
+| `tracking_rate` | — | Share of pieces that pass the tracking check (see below). |
 
 Accuracy is **event-pooled**: errors from every onset of every tracked piece go
 into one distribution, so long pieces weigh more than short ones. `rtf` and
 latency are averaged per piece instead.
+
+### Smoothness (SPARC)
+
+Matchmaker's `evaluate_alignment()` returns `smoothness`, calculated using SPARC (Spectral Arc Length); the benchmark keeps that name and value.
+Positions are resampled at 50 Hz, holding the last reported position between updates.
+Windows start at ground-truth performance onsets, following the TR window policy; their duration is configurable and is set to 30 seconds for this benchmark.
+Short pieces use one whole-piece window, and the final window is clipped at the last annotated onset.
+Each piece averages its valid window values, and the headline score averages these per-piece values over tracked pieces only.
+Fully stationary or otherwise undefined windows are skipped; `smoothness` is `null` when no window can be scored.
 
 ### What a follower is told
 
@@ -122,7 +133,7 @@ than assumed. That only arises on a fold CSV written before the column existed,
 or by hand; regenerate it with `make_folds.py --from-repo`.
 
 The fallback keeps the run alive; it does not make the result equivalent. On
-the example piece, `pfkorz` goes from a tracked `beat_median` of 0.067 with the
+the example piece, `pfkorz` goes from a tracked `median_b` of 0.067 with the
 measured tempo to a lost piece at 39.0 without it, because the notated marking
 is nowhere near the played tempo. Read a run with a non-zero shortfall as a
 mixture of two conditions, not as a clean measurement.

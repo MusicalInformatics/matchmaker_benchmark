@@ -79,21 +79,7 @@ TEMPO_DEPENDENT_METHODS = ["pfkorz"]
 
 TEMPO_METADATA_PATH = WORKING_DIR / "data/perf_tempo_estimate"
 
-DISPLAY_COLUMNS = [
-    "Index",
-    "Piece",
-    "beat_mean",
-    "beat_median",
-    "beat_0.1b",
-    "beat_0.5b",
-    "beat_1.0b",
-    "ms_mean",
-    "ms_median",
-    "ms_300ms",
-    "ms_1000ms",
-    "sparc",
-    "tracked",
-]
+DISPLAY_COLUMNS = ["Index", "Piece", "mean_b", "median_b", "accuracy_b", "smoothness", "tracked"]
 
 
 def print_summary_table(results: dict):
@@ -203,16 +189,7 @@ def run_tests_and_eval_by_dataset(
             nested["max_deviation"] = float(tracking["max_deviation"])
             nested["n_failed_segments"] = int(tracking["n_failed"])
 
-            # Flatten nested {"beat": {...}, "ms": {...}} for the per-piece results
-            # table (matches test_audio columns); the per-piece JSON stays nested.
-            piece_result = {}
-            for k, v in nested.get("beat", {}).items():
-                piece_result[f"beat_{k}"] = v
-            for k, v in nested.get("ms", {}).items():
-                piece_result[f"ms_{k}"] = v
-            for k, v in nested.items():
-                if k not in ("beat", "ms"):
-                    piece_result[k] = v
+            piece_result = nested.copy()
 
             # Save WP/GT — column order: perf_sec, score_beat
             if run_dir is not None:

@@ -43,19 +43,13 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
         alignment_duration=None,
         input_type="midi",
     )
-    expected = evaluate_alignment(beats, times, gt_times, gt_times, return_details=True)
-    expected_sparc = expected["smoothness_details"]
+    expected = evaluate_alignment(beats, times, gt_times, gt_times)
     actual = run_evaluation(mm, gt=np.column_stack([gt_times, gt_times]))
-    assert actual["beat"]["mean"] == expected["mean_b"]
-    assert actual["ms"] == expected["ms"]
-    assert "sparc_windows" not in actual
-    for key in (
-        "sparc",
-        "sparc_n_windows",
-        "sparc_n_valid_windows",
-        "sparc_valid_window_fraction",
-    ):
-        assert actual[key] == expected_sparc[key]
+    assert actual["accuracy_b"] == expected["accuracy_b"]
+    for key in expected:
+        if key != "accuracy_b":
+            assert actual[key] == pytest.approx(expected[key], nan_ok=True)
+    assert set(actual) == {"mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis", "smoothness"}
 
     np.savetxt(
         tmp_path / "wp_0.tsv",
@@ -72,19 +66,13 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
         comments="",
     )
     summary = compute_event_pooled_summary({"Index": [0], "tracked": [True]}, tmp_path)
-    assert summary["sparc"] == pytest.approx(expected_sparc["sparc"])
-    for key in (
-        "sparc_n_windows",
-        "sparc_n_valid_windows",
-        "sparc_valid_window_fraction",
-    ):
-        assert summary[key] == expected_sparc[key]
+    assert summary["smoothness"] == expected["smoothness"]
     columns = metric_columns({"summary_tracked": summary})
-    assert columns["sparc_n_windows"] == expected_sparc["sparc_n_windows"]
-    assert columns["sparc_valid_window_fraction"] == 1.0
+    assert columns["smoothness"] == expected["smoothness"]
+    assert columns["accuracy_b"] == expected["accuracy_b"]
 
 
-def test_pooling_keeps_stationary_window_counts(tmp_path):
+def test_pooling_skips_undefined_smoothness(tmp_path):
     onsets = np.arange(0.0, 61.0)
     for index in range(2):
         times = np.arange(0.0, 60.02, 0.02)
@@ -106,11 +94,7 @@ def test_pooling_keeps_stationary_window_counts(tmp_path):
     summary = compute_event_pooled_summary(
         {"Index": [0, 1], "tracked": [True, True]}, tmp_path
     )
-    assert summary["sparc_n_windows"] == 62
-    assert summary["sparc_n_valid_windows"] == 31
-    assert summary["sparc_valid_window_fraction"] == 0.5
-    assert summary["sparc"] is not None
+    assert summary["smoothness"] is not None
+    assert not any(key.startswith("sparc") for key in summary)
     frozen = compute_event_pooled_summary({"Index": [1], "tracked": [True]}, tmp_path)
-    assert frozen["sparc"] is None
-    assert frozen["sparc_n_windows"] == 31
-    assert frozen["sparc_n_valid_windows"] == 0
+    assert frozen["smoothness"] is None

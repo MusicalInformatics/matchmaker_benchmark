@@ -30,6 +30,7 @@ import argparse
 import numpy as np
 
 from matchmaker_eval.submission import SubmissionError
+from matchmaker_eval.utils import pooled_summaries
 from run_submission import evaluate_submission
 
 VALID_FOLD = "valid"
@@ -39,8 +40,8 @@ def summarise(metrics: dict) -> str:
     """A readable verdict, rather than a path to a JSON file."""
     overall = metrics.get("summary_all") or {}
     tracked = metrics.get("summary_tracked") or {}
-    beat_all = (overall.get("beat") or {})
-    beat_tracked = (tracked.get("beat") or {})
+    beat_all = overall
+    beat_tracked = tracked
     n, total = metrics["n_tracked"], metrics["n_pieces"]
 
     lines = [
@@ -49,20 +50,20 @@ def summarise(metrics: dict) -> str:
         "-" * 65,
         f"  tracking rate      {n}/{total} pieces ({overall.get('tracking_rate', 0.0):.0%})",
     ]
-    if beat_tracked.get("mean") is not None:
+    if beat_tracked.get("mean_b") is not None:
         lines.append(
-            f"  beat error (mean)  {beat_tracked['mean']:.3f} (tracked) | "
-            f"{beat_all.get('mean', float('nan')):.3f} (all)"
+            f"  beat error (mean)  {beat_tracked['mean_b']:.3f} (tracked) | "
+            f"{beat_all.get('mean_b', float('nan')):.3f} (all)"
         )
-    if beat_tracked.get("median") is not None:
+    if beat_tracked.get("median_b") is not None:
         lines.append(
-            f"  beat error (med)   {beat_tracked['median']:.3f} (tracked) | "
-            f"{beat_all.get('median', float('nan')):.3f} (all)"
+            f"  beat error (med)   {beat_tracked['median_b']:.3f} (tracked) | "
+            f"{beat_all.get('median_b', float('nan')):.3f} (all)"
         )
-    if tracked.get("sparc") is not None:
+    if tracked.get("smoothness") is not None:
         lines.append(
-            f"  SPARC (mean)       {tracked['sparc']:.2f} (tracked) | "
-            f"{overall.get('sparc', float('nan')):.2f} (all)"
+            f"  Smoothness       {tracked['smoothness']:.2f} (tracked) | "
+            f"{overall.get('smoothness', float('nan')):.2f} (all)"
         )
     if tracked.get("rtf") is not None:
         lines.append(f"  real-time factor   {tracked['rtf']:.4f}")
@@ -165,6 +166,7 @@ def main():
         parser.error("pass --input-type <audio|midi> when specifying --method")
 
     all_metrics = []
+    run_dirs = {}
     if run_multi:
         print(f"Running {len(methods_to_run)} methods ({', '.join(methods_to_run)}) for input_type='{args.input_type}' on {VALID_FOLD} fold...")
 
@@ -185,6 +187,9 @@ def main():
                 run_dir=method_run_dir,
             )
             all_metrics.append(metrics)
+            run_dirs[metrics["submission"]] = method_run_dir or (
+                _REPO_ROOT / "results" / "runs" / VALID_FOLD / metrics["submission"]
+            )
             print(summarise(metrics))
         except SubmissionError as e:
             print(f"\n[{m}] Error: {e}", file=sys.stderr)
@@ -215,19 +220,14 @@ def main():
             m_name = met.get("method") or met.get("submission")
             tr = met.get("summary_all", {}).get("tracking_rate", 0.0)
             tracked_sum = met.get("summary_tracked", {})
-            beat_tr = tracked_sum.get("beat", {})
+            beat_tr = tracked_sum
 
             # Filter for common tracked pieces
             pieces = met.get("pieces", [])
             common_pieces = [p for p in pieces if p.get("index") in common_indices]
-            sparc_list = [p["sparc"] for p in common_pieces if "sparc" in p and p.get("sparc") is not None]
-            common_sparc = float(np.mean(sparc_list)) if sparc_list else float("nan")
-            
-            beat_err_list = [p["beat_mean"] for p in common_pieces if "beat_mean" in p and p.get("beat_mean") is not None]
-            common_beat_err = float(np.mean(beat_err_list)) if beat_err_list else float("nan")
-
-            b05_list = [p["beat_0.5b"] for p in common_pieces if "beat_0.5b" in p and p.get("beat_0.5b") is not None]
-            common_05b = float(np.mean(b05_list)) if b05_list else float("nan")
+            common_summary = pooled_summaries(
+                common_pieces, run_dirs[met["submission"]]
+            )["summary_tracked"]
 
             def _fmt_val(val, fmt_str):
                 return "-" if val is None or (isinstance(val, float) and np.isnan(val)) else f"{val:{fmt_str}}"
@@ -240,13 +240,13 @@ def main():
                     "Method": m_name,
                     "TR (%)": f"{tr * 100:.1f}%",
                     "Tracked": met.get("n_tracked", 0),
-                    "MeanAE": _fmt_val(beat_tr.get("mean"), ".3f"),
-                    "0.5b": _fmt_pct(beat_tr.get("0.5b")),
-                    "SPARC": _fmt_val(tracked_sum.get("sparc"), ".2f"),
+                    "MeanAE": _fmt_val(beat_tr.get("mean_b"), ".3f"),
+                    "0.5b": _fmt_pct(beat_tr.get("accuracy_b", {}).get("0.5b")),
+                    "Smoothness": _fmt_val(tracked_sum.get("smoothness"), ".2f"),
                     "Common Count": len(common_pieces),
-                    "Common MeanAE": _fmt_val(common_beat_err, ".3f"),
-                    "Common 0.5b": _fmt_pct(common_05b),
-                    "Common SPARC": _fmt_val(common_sparc, ".2f"),
+                    "Common MeanAE": _fmt_val(common_summary.get("mean_b"), ".3f"),
+                    "Common 0.5b": _fmt_pct(common_summary.get("accuracy_b", {}).get("0.5b")),
+                    "Common Smoothness": _fmt_val(common_summary.get("smoothness"), ".2f"),
                     "RTF": _fmt_val(tracked_sum.get("rtf"), ".4f"),
                 }
             )

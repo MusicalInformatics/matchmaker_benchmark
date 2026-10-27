@@ -181,19 +181,6 @@ def environment_info() -> dict:
     return info
 
 
-def flatten_metrics(nested: dict) -> dict:
-    """``{"beat": {...}, "ms": {...}, ...}`` -> ``{"beat_...", "ms_...", ...}``."""
-    flat = {}
-    for key, value in nested.get("beat", {}).items():
-        flat[f"beat_{key}"] = value
-    for key, value in nested.get("ms", {}).items():
-        flat[f"ms_{key}"] = value
-    for key, value in nested.items():
-        if key not in ("beat", "ms"):
-            flat[key] = value
-    return flat
-
-
 def check_follower(follower) -> None:
     """Catch the two wiring mistakes early, with a message worth reading.
 
@@ -221,7 +208,7 @@ def check_follower(follower) -> None:
 def run_piece(
     method, piece, input_type, index, run_dir, save_plots, estimated_bpm=False
 ):
-    """Run and score one piece. Returns (flat_metrics, nested_metrics).
+    """Run and score one piece, returning the shared metric fields.
 
     ``method`` is the name the submission registered with matchmaker, so this
     is an ordinary ``Matchmaker`` call — the same one ``test_symbolic.py`` and
@@ -264,7 +251,7 @@ def run_piece(
     )
     gt = np.column_stack([perf_sec, score_beat])
 
-    nested = run_evaluation(
+    metrics = run_evaluation(
         mm,
         gt=gt,
         tolerances=TOLERANCES_IN_BEATS,
@@ -285,9 +272,9 @@ def run_piece(
         segment_duration=SEGMENT_DURATION,
         threshold=threshold,
     )
-    nested["tracked"] = bool(tracking["tracked"])
-    nested["max_deviation"] = float(tracking["max_deviation"])
-    nested["n_failed_segments"] = int(tracking["n_failed"])
+    metrics["tracked"] = bool(tracking["tracked"])
+    metrics["max_deviation"] = float(tracking["max_deviation"])
+    metrics["n_failed_segments"] = int(tracking["n_failed"])
 
     if save_plots:
         plot_tracking(
@@ -302,12 +289,12 @@ def run_piece(
     # Whether this piece actually got a measured tempo. False both when the
     # entry never asked and when it asked and the fold had none — the run
     # summary separates the two, since only the second is worth reporting.
-    nested["used_estimated_bpm"] = tempo is not None
+    metrics["used_estimated_bpm"] = tempo is not None
 
     with open(run_dir / f"{index}.json", "w") as f:
-        json.dump(nested, f, indent=4, default=float)
+        json.dump(metrics, f, indent=4, default=float)
 
-    return flatten_metrics(nested), nested
+    return metrics
 
 
 def fold_file_label(fold) -> str:
@@ -472,10 +459,11 @@ def evaluate_submission(
             "piece_id": piece.piece_id,
             "dataset": piece.dataset,
             "title": piece.title,
+            "estimated_bpm": piece.performance_tempo,
         }
         try:
             with piece_time_budget(piece_timeout):
-                flat, _ = run_piece(
+                flat = run_piece(
                     method,
                     piece,
                     input_type,
@@ -502,7 +490,7 @@ def evaluate_submission(
         no_tempo = estimated_bpm and not flat.get("used_estimated_bpm")
         print(
             f"  {'TRACKED' if flat.get('tracked') else 'FAILED '}"
-            f"  beat_median={flat.get('beat_median', float('nan')):.3f}"
+            f"  median_b={flat.get('median_b', float('nan')):.3f}"
             f"  max_dev={flat.get('max_deviation', float('nan')):.3f}b"
             + ("  (no estimated_bpm in the fold: used the score's tempo)"
                if no_tempo else "")

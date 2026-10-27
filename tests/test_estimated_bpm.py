@@ -204,7 +204,7 @@ class TestMissingTempoFallsBack:
     def test_it_runs_anyway(self, tmp_path):
         from run_submission import run_piece
 
-        flat, _ = run_piece("pthmm", self._piece_without_tempo(), "midi", 1,
+        flat = run_piece("pthmm", self._piece_without_tempo(), "midi", 1,
                             tmp_path, False, estimated_bpm=True)
         assert flat["used_estimated_bpm"] is False
         assert flat["tracked"] is True
@@ -214,7 +214,7 @@ class TestMissingTempoFallsBack:
         from run_submission import run_piece
 
         piece = load_fold("example", input_type="midi")[0]
-        flat, _ = run_piece("pthmm", piece, "midi", 1, tmp_path, False,
+        flat = run_piece("pthmm", piece, "midi", 1, tmp_path, False,
                             estimated_bpm=True)
         assert flat["used_estimated_bpm"] is True
 
@@ -223,7 +223,7 @@ class TestMissingTempoFallsBack:
         from run_submission import run_piece
 
         piece = load_fold("example", input_type="midi")[0]
-        flat, _ = run_piece("pthmm", piece, "midi", 1, tmp_path, False,
+        flat = run_piece("pthmm", piece, "midi", 1, tmp_path, False,
                             estimated_bpm=False)
         assert flat["used_estimated_bpm"] is False
 

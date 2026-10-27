@@ -44,7 +44,7 @@ def run_dir(tmp_path):
 
 
 PIECES = [
-    {"index": 0, "piece_id": "asap/a", "dataset": "asap", "tracked": True, "rtf": 0.1},
+    {"index": 0, "piece_id": "asap/a", "dataset": "asap", "tracked": True, "rtf": 0.1, "estimated_bpm": 120.0},
     {"index": 1, "piece_id": "batik/b", "dataset": "batik", "tracked": True, "rtf": 0.3},
     {"index": 2, "piece_id": "batik/c", "dataset": "batik", "tracked": False, "error": "boom"},
 ]
@@ -54,8 +54,8 @@ class TestPooling:
     def test_each_dataset_is_pooled_over_its_own_pieces(self, run_dir):
         blocks = dataset_summaries(PIECES, run_dir)
         assert list(blocks) == ["asap", "batik"]
-        assert blocks["asap"]["summary_tracked"]["beat"]["median"] == 0.0
-        assert blocks["batik"]["summary_tracked"]["beat"]["median"] == pytest.approx(0.2)
+        assert blocks["asap"]["summary_tracked"]["median_b"] == 0.0
+        assert blocks["batik"]["summary_tracked"]["median_b"] == pytest.approx(0.2)
 
     def test_a_dataset_block_has_the_shape_of_the_run_record(self, run_dir):
         block = dataset_summaries(PIECES, run_dir)["batik"]
@@ -63,7 +63,7 @@ class TestPooling:
         assert block["n_tracked"] == 1
         assert block["n_failed"] == 1
         assert block["summary_all"]["tracking_rate"] == 0.5
-        assert set(block["summary_tracked"]) >= {"beat", "ms", "rtf", "sparc"}
+        assert set(block["summary_tracked"]) >= {"mean_b", "median_b", "accuracy_b", "rtf", "smoothness"}
 
     def test_a_crashed_piece_does_not_shift_the_timing_columns(self, run_dir):
         """The crashed piece has no rtf; the others' must still line up."""
@@ -113,7 +113,7 @@ def merged(tmp_path, run_dir):
 class TestTheRecord:
     def test_the_merge_carries_the_per_dataset_block(self, merged):
         assert set(merged["datasets"]) == {"asap", "batik"}
-        assert merged["datasets"]["asap"]["summary_tracked"]["beat"]["median"] == 0.0
+        assert merged["datasets"]["asap"]["summary_tracked"]["median_b"] == 0.0
 
     def test_the_row_flattens_every_dataset_like_the_headline(self, merged):
         row = L.row_from_metrics(merged)
@@ -121,7 +121,7 @@ class TestTheRecord:
         assert set(row["datasets"]["batik"]) == set(headline)
         assert row["datasets"]["batik"]["tracking_rate"] == 0.5
         assert row["datasets"]["batik"]["n_failed"] == 1
-        assert row["datasets"]["asap"]["beat_median"] == 0.0
+        assert row["datasets"]["asap"]["median_b"] == 0.0
 
     def test_the_headline_is_pooled_over_the_whole_run(self, merged):
         row = L.row_from_metrics(merged)
@@ -143,7 +143,7 @@ def results(tmp_path, merged, monkeypatch):
             record = json.loads(json.dumps(merged))
             record["submission"] = name
             record["datasets"] = {"asap": record["datasets"]["asap"]}
-            record["datasets"]["asap"]["summary_tracked"]["beat"]["median"] = 0.1
+            record["datasets"]["asap"]["summary_tracked"]["median_b"] = 0.1
         d = results / "submissions" / name
         d.mkdir(parents=True)
         (d / "metrics.json").write_text(json.dumps(record))
@@ -159,7 +159,7 @@ class TestDatasetBoards:
 
     def test_a_board_ranks_within_its_dataset(self, results):
         board = L.dataset_boards(L.build())["asap"]
-        ranks = [(e["rank"], e["submission"], e["beat_median"]) for e in board["entries"]]
+        ranks = [(e["rank"], e["submission"], e["median_b"]) for e in board["entries"]]
         assert ranks == [(1, "demo-midi", 0.0), (2, "asap-only", 0.1)]
 
     def test_a_board_row_carries_the_dataset_columns_not_the_headline(self, results):
@@ -193,8 +193,8 @@ class TestDatasetBoards:
         L.write(L.build())
         board = json.loads((results / "leaderboard.json").read_text())
         entry = next(e for e in board["entries"] if e["submission"] == "demo-midi")
-        assert entry["datasets"]["batik"]["beat_0.5b"] is not None
-        assert entry["datasets"]["batik"]["sparc"] is not None
+        assert entry["datasets"]["batik"]["accuracy_b"]["0.5b"] is not None
+        assert entry["datasets"]["batik"]["smoothness"] is not None
 
 
 class TestTheDetailFile:
@@ -212,6 +212,8 @@ class TestTheDetailFile:
             json.dumps(merged["summary_tracked"])
         )
         assert detail["overall"]["n_pieces"] == 3
+        assert detail["pieces"][0]["estimated_bpm"] == 120.0
+        assert "estimated_bpm" not in detail["metrics"]
 
 
 class TestPublishedJsonIsStrict:
@@ -224,7 +226,7 @@ class TestPublishedJsonIsStrict:
     def test_a_nan_skewness_does_not_reach_the_published_files(self, results):
         record_path = results / "submissions" / "demo-midi" / "metrics.json"
         record = json.loads(record_path.read_text())
-        record["datasets"]["batik"]["summary_tracked"]["ms"]["skewness"] = float("nan")
+        record["datasets"]["batik"]["summary_tracked"]["skewness"] = float("nan")
         record_path.write_text(json.dumps(record))
         L.write(L.build())
         assert "NaN" not in (results / "leaderboard.json").read_text()
@@ -235,7 +237,7 @@ class TestPublishedJsonIsStrict:
 
         run = tmp_path / "merged"
         record = json.loads((run / "metrics.json").read_text())
-        record["summary_tracked"]["ms"]["kurtosis"] = float("nan")
+        record["summary_tracked"]["kurtosis"] = float("nan")
         (run / "metrics.json").write_text(json.dumps(record))
         monkeypatch.setattr(E, "REPO_ROOT", tmp_path)
         monkeypatch.setattr(E, "SUBMISSION_RESULTS", tmp_path)
@@ -244,7 +246,7 @@ class TestPublishedJsonIsStrict:
         assert E.main() == 0
         text = (tmp_path / "details" / "demo-midi.json").read_text()
         assert "NaN" not in text
-        assert json.loads(text)["overall"]["summary_tracked"]["ms"]["kurtosis"] is None
+        assert json.loads(text)["overall"]["summary_tracked"]["kurtosis"] is None
 
 
 class TestTheSite:

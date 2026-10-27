@@ -129,25 +129,14 @@ def compare(method: str, fold: str, limit: int, input_type: str = "midi") -> int
             builtin = run(method, piece, input_type)  # what the runners do
             registered = run(clone, piece, input_type)  # what a submission does
 
-            for domain in ("beat", "ms"):
-                for key in sorted(builtin.get(domain, {})):
-                    x, y = builtin[domain][key], registered[domain].get(key)
-                    same = x == y or (
-                        isinstance(x, float)
-                        and isinstance(y, float)
-                        and np.isclose(x, y)
-                    )
-                    if not same:
-                        mismatches += 1
-                        print(f"  MISMATCH {domain}_{key}: builtin={x} registered={y}")
-            print(
-                f"  beat_median  builtin={builtin['beat']['median']:.4f} "
-                f"registered={registered['beat']['median']:.4f}"
-            )
-            print(
-                f"  ms_median    builtin={builtin['ms']['median']:.4f} "
-                f"registered={registered['ms']['median']:.4f}"
-            )
+            for key in ("mean_b", "median_b", "std_b", "smoothness", "accuracy_b"):
+                x, y = builtin[key], registered[key]
+                same = x == y or (isinstance(x, float) and isinstance(y, float) and np.isclose(x, y, equal_nan=True))
+                if not same:
+                    mismatches += 1
+                    print(f"  MISMATCH {key}: builtin={x} registered={y}")
+            print(f"  median_b  builtin={builtin['median_b']:.4f} registered={registered['median_b']:.4f}")
+
     finally:
         unregister_method(clone, input_type)
 
