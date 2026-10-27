@@ -663,7 +663,7 @@ const LOWER_IS_BETTER = new Set([
 ]);
 
 const METRIC_GROUPS = [
-  ["Beat error", (m) => ["mean_b", "median_b", "std_b", "skewness", "kurtosis"].includes(m)],
+  ["Error analysis", (m) => ["mean_b", "median_b", "std_b", "skewness", "kurtosis"].includes(m)],
   ["Alignment accuracy within tolerance", (m) => m.startsWith("accuracy_b.")],
   ["Smoothness (SPARC)", (m) => m === "smoothness"],
   ["Tracking", (m) => ["tracked", "tracking_rate", "max_deviation", "n_failed_segments"].includes(m)],

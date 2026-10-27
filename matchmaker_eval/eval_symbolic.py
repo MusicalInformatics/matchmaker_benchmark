@@ -71,7 +71,6 @@ from matchmaker.utils.tempo_models import (
 
 from matchmaker.utils.eval import (
     TOLERANCES_IN_BEATS,
-    TOLERANCES_IN_MILLISECONDS,
     get_evaluation_results,
     # transfer_from_perf_to_predicted_score,
     # transfer_from_score_to_predicted_perf,
@@ -419,24 +418,13 @@ def align(
             f"Warning: asynchrony array contains {np.count_nonzero(np.isnan(asynchrony))} NaNs!"
         )
 
-    tolerances_in_seconds = [10, 25, 50, 100, 200, 300, 500, 1000, 2000]
-    results_in_seconds = get_evaluation_results(
-        mapped_predicted_ponsets,
-        target_ponsets,
-        total_counts=len(predicted_sonsets),
-        tolerances=tolerances_in_seconds,
-        in_seconds=True,
-    )
-
     mapped_target_sonsets = ptime_to_stime_map(target_ponsets)
 
-    beat_tolerances = [0.05, 0.1, 0.3, 0.5, 1, 2]
     beat_results = get_evaluation_results(
-        predicted_sonsets,
         mapped_target_sonsets,
+        predicted_sonsets,
         total_counts=len(predicted_sonsets),
-        tolerances=beat_tolerances,
-        in_seconds=False,
+        tolerances=TOLERANCES_IN_BEATS,
     )
     gt_ponsets = pna["onset_sec"]
     gt_sonsets = sna["onset_beat"]
@@ -498,19 +486,6 @@ def align(
     result = dict(
         {
             "tracking_ratio": f"{tracking_ratio:.3f}",
-            "AAE (ms) ± σ": f'{results_in_seconds["mean"]:.3f}±{results_in_seconds["std"]:.3f}',
-            "MAE (ms)": f'{results_in_seconds["median"]:.3f}',
-            "skewness (ms)": f'{results_in_seconds["skewness"]:.3f}',
-            "kurtosis (ms)": f'{results_in_seconds["kurtosis"]:.3f}',
-            "<10ms": f'{results_in_seconds["10ms"]*100:.1f}',
-            "<25ms": f'{results_in_seconds["25ms"]*100:.1f}',
-            "<50ms": f'{results_in_seconds["50ms"]*100:.1f}',
-            "<100ms": f'{results_in_seconds["100ms"]*100:.1f}',
-            "<500ms": f'{results_in_seconds["500ms"]*100:.1f}',
-            "<1000ms": f'{results_in_seconds["1000ms"]*100:.1f}',
-            "<2000ms": f'{results_in_seconds["2000ms"]*100:.1f}',
-            "count (ms)": f'{results_in_seconds["count"]}',
-            "pcr (ms)": f'{results_in_seconds["pcr"]:.3f}',
             "AAE (beats) ± σ": f'{beat_results["mean"]:.2f}±{beat_results["std"]:.2f}',
             "MAE (beats)": f'{beat_results["median"]:.2f}',
             "<0.05b": f'{beat_results["0.05b"]*100:.1f}',
@@ -518,30 +493,12 @@ def align(
             "<0.5b": f'{beat_results["0.5b"]*100:.1f}',
             "<1b": f'{beat_results["1b"]*100:.1f}',
             "<2b": f'{beat_results["2b"]*100:.1f}',
-            "count (beats)": f'{beat_results["count"]}',
-            "pcr (beats)": f'{beat_results["pcr"]:.3f}',
         }
     )
 
     result_ext = dict(
         {
             "tracking_ratio": tracking_ratio,
-            "AAE": results_in_seconds["mean"],
-            "std": results_in_seconds["std"],
-            "MAE": results_in_seconds["median"],
-            "skewness (ms)": results_in_seconds["skewness"],
-            "kurtosis (ms)": results_in_seconds["kurtosis"],
-            "%_lt_10ms": results_in_seconds["10ms"] * 100,
-            "%_lt_25ms": results_in_seconds["25ms"] * 100,
-            "%_lt_50ms": results_in_seconds["50ms"] * 100,
-            "%_lt_100ms": results_in_seconds["100ms"] * 100,
-            "%_lt_200ms": results_in_seconds["200ms"] * 100,
-            "%_lt_300ms": results_in_seconds["300ms"] * 100,
-            "%_lt_500ms": results_in_seconds["500ms"] * 100,
-            "%_lt_1000ms": results_in_seconds["1000ms"] * 100,
-            "%_lt_2000ms": results_in_seconds["2000ms"] * 100,
-            "count (ms)": results_in_seconds["count"],
-            "pcr (ms)": results_in_seconds["pcr"],
             "AAE (beats)": beat_results["mean"],
             "MAE (beats)": beat_results["median"],
             "std (beats)": beat_results["std"],
@@ -553,8 +510,6 @@ def align(
             "%_lt_<0.5b": beat_results["0.5b"] * 100,
             "%_lt_<1b": beat_results["1b"] * 100,
             "%_lt_<2b": beat_results["2b"] * 100,
-            "count (beats)": beat_results["count"],
-            "pcr (beats)": beat_results["pcr"],
         }
     )
 
@@ -682,19 +637,6 @@ def run_tests_and_eval_by_dataset(args, kwargs):
     final_res = dict(
         {
             "tracking ratio": f'{np.mean(results_extended["tracking_ratio"]):.3f}',
-            "AAE (ms) ± σ": f'{np.mean(results_extended["AAE"]):.3f}±{np.mean(results_extended["std"]):.3f}',
-            "MAE (ms)": f'{np.mean(results_extended["MAE"]):.3f}',
-            "skewness (ms)": f'{np.mean(results_extended["skewness (ms)"]):.3f}',
-            "kurtosis (ms)": f'{np.mean(results_extended["kurtosis (ms)"]):.3f}',
-            "<10ms": f'{np.mean(results_extended["%_lt_10ms"]):.1f}',
-            "<25ms": f'{np.mean(results_extended["%_lt_25ms"]):.1f}',
-            "<50ms": f'{np.mean(results_extended["%_lt_50ms"]):.1f}',
-            "<100ms": f'{np.mean(results_extended["%_lt_100ms"]):.1f}',
-            "<500ms": f'{np.mean(results_extended["%_lt_500ms"]):.1f}',
-            "<1000ms": f'{np.mean(results_extended["%_lt_1000ms"]):.1f}',
-            "<2000ms": f'{np.mean(results_extended["%_lt_2000ms"]):.1f}',
-            "count (ms)": f'{np.mean(results_extended["count (ms)"]):.3f}',
-            "pcr (ms)": f'{np.mean(results_extended["pcr (ms)"]):.3f}',
             "AAE (beats) ± σ": f'{np.mean(results_extended["AAE (beats)"]):.3f}±{np.mean(results_extended["std (beats)"]):.3f}',
             "MAE (beats)": f'{np.mean(results_extended["MAE (beats)"]):.3f}',
             "skewness (beats)": f'{np.mean(results_extended["skewness (beats)"]):.3f}',
@@ -704,8 +646,6 @@ def run_tests_and_eval_by_dataset(args, kwargs):
             "<0.5b": f'{np.mean(results_extended["%_lt_<0.5b"]):.1f}',
             "<1b": f'{np.mean(results_extended["%_lt_<1b"]):.1f}',
             "<2b": f'{np.mean(results_extended["%_lt_<2b"]):.1f}',
-            "count (beats)": f'{np.mean(results_extended["count (beats)"]):.3f}',
-            "pcr (beats)": f'{np.mean(results_extended["pcr (beats)"]):.3f}',
         }
     )
 

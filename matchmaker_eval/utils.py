@@ -23,7 +23,6 @@ from matchmaker.utils.eval import (
     TOLERANCES_IN_BEATS,
     evaluate_alignment,
     evaluate_beat_errors,
-    get_evaluation_results,
     transfer_positions,
 )
 from matchmaker.utils.eval import spectral_arc_length as spectral_arc_length
@@ -32,7 +31,6 @@ from numpy.typing import NDArray
 from pydantic_settings import BaseSettings
 
 WORKING_DIR = Path(__file__).parent.parent
-TOLERANCES_IN_MS = [50, 100, 300, 500, 1000, 2000]
 METRICS_BEAT = ["mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis", "smoothness"]
 METRICS_TRACKING = ["tracked", "max_deviation", "n_failed_segments"]
 METRICS_ALL = METRICS_BEAT + METRICS_TRACKING
