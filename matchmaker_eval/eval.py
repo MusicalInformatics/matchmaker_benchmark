@@ -108,14 +108,31 @@ def run_evaluation(
 
     perf_annots, score_annots_beats = resolve_gt(gt, mm.score_part.note_array())
 
-    eval_results = evaluate_alignment(
+    evaluation = evaluate_alignment(
         score_beat,
         perf_sec,
         score_annots_beats,
         perf_annots,
         beat_tolerances=tolerances if domain == "score" else TOLERANCES_IN_BEATS,
         ms_tolerances=TOLERANCES_IN_MS,
+        return_details=True,
     )
+    eval_results = {
+        "beat": {
+            "mean": evaluation["mean_b"],
+            "median": evaluation["median_b"],
+            "std": evaluation["std_b"],
+            "skewness": evaluation["skewness"],
+            "kurtosis": evaluation["kurtosis"],
+            **evaluation["accuracy_b"],
+        },
+        "ms": evaluation["ms"],
+        **{
+            key: value
+            for key, value in evaluation["smoothness_details"].items()
+            if key != "sparc_windows"
+        },
+    }
 
     # Real-Time Factor (domain-independent)
     if mm.alignment_duration is not None:
