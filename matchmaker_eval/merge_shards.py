@@ -28,6 +28,7 @@ import shutil
 from utils import dataset_summaries, pooled_summaries
 
 from matchmaker_eval.folds import REPO_ROOT
+from matchmaker_eval.provenance import SHARED_COMPONENTS, evaluation_record
 
 
 class MergeError(Exception):
@@ -62,6 +63,20 @@ def merge(root: Path, output: Path) -> dict:
         values = {r.get(key) for r in records}
         if len(values) > 1:
             raise MergeError(f"shards disagree on '{key}': {sorted(map(str, values))}")
+
+    # Every shard must also have been scored under the same conditions: the
+    # same scoring code, matchmaker and partitura. Each shard hashed only its
+    # own pieces' data; that part is combined below over the merged pieces.
+    for component in SHARED_COMPONENTS:
+        values = {
+            ((r.get("evaluation") or {}).get("components") or {}).get(component)
+            for r in records
+        }
+        if len(values) > 1:
+            raise MergeError(
+                f"shards were scored under different conditions ('{component}' "
+                f"differs: {sorted(map(str, values))}) — rerun them on one commit"
+            )
 
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -127,6 +142,11 @@ def merge(root: Path, output: Path) -> dict:
         "n_estimated_bpm": sum(1 for p in pieces if p.get("used_estimated_bpm")),
         "n_failed": len(failures),
         "failures": failures,
+        # Recomputed over the merged pieces, so the data hash covers the whole
+        # fold — the key a complete run would have had.
+        "evaluation": evaluation_record(
+            (first.get("evaluation") or {}).get("components") or {}, pieces
+        ),
         **pooled_summaries(pieces, output),
         "datasets": dataset_summaries(pieces, output),
         "pieces": pieces,

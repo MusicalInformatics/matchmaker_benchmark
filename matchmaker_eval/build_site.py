@@ -44,7 +44,7 @@ def build(destination: Path) -> dict:
         raise SiteError(f"{DOCS_DIR} is missing.")
     shutil.copytree(DOCS_DIR, destination)
 
-    summary = {"boards": [], "details": 0, "missing": []}
+    summary = {"boards": [], "details": 0, "archives": 0, "missing": []}
     for name in ("leaderboard.json", "leaderboard.csv"):
         source = RESULTS_DIR / name
         if source.exists():
@@ -64,6 +64,13 @@ def build(destination: Path) -> dict:
         for path in sorted(details.glob("*.json")):
             shutil.copy2(path, target / path.name)
             summary["details"] += 1
+
+    # Every leaderboard ever published under an evaluation key, so a key cited
+    # in a paper resolves to archive/<key>/leaderboard.json on the site.
+    archive = RESULTS_DIR / "archive"
+    if archive.is_dir():
+        shutil.copytree(archive, destination / "archive")
+        summary["archives"] = sum(1 for path in archive.iterdir() if path.is_dir())
 
     if "leaderboard.json" in summary["missing"]:
         raise SiteError(
@@ -120,7 +127,8 @@ def main():
     print(f"assembled {args.destination} from docs/ + results/")
     print(
         f"  leaderboard.json, leaderboard.csv, {len(summary['boards'])} "
-        f"per-dataset file(s), {summary['details']} detail file(s)"
+        f"per-dataset file(s), {summary['details']} detail file(s), "
+        f"{summary['archives']} archived key(s)"
     )
     for name in summary["missing"]:
         print(f"  note: results/{name} was not there")

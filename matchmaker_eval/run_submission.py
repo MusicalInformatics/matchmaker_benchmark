@@ -53,6 +53,11 @@ from matchmaker import Matchmaker
 from matchmaker.base import OnlineAlignment
 
 from matchmaker_eval.fetch_data import FetchError, fetch_for_pieces, load_config
+from matchmaker_eval.provenance import (
+    code_components,
+    evaluation_record,
+    piece_data_sha256,
+)
 from matchmaker_eval.folds import (
     LEADERBOARD_FOLD,
     REPO_ROOT,
@@ -297,6 +302,20 @@ def run_piece(
     return metrics
 
 
+def scoring_parts() -> dict:
+    """What this file contributes to a score, for the evaluation key.
+
+    The tracked-verdict thresholds and the function that resolves ground truth
+    and calls the evaluation. Anything added here that decides a number belongs
+    in this dict too; see provenance.py.
+    """
+    return {
+        "TRACKING_THRESHOLD": TRACKING_THRESHOLD,
+        "SEGMENT_DURATION": SEGMENT_DURATION,
+        "run_piece": run_piece,
+    }
+
+
 def fold_file_label(fold) -> str:
     """The fold CSV's path for the record: repo-relative when it is in the repo.
 
@@ -461,6 +480,12 @@ def evaluate_submission(
             "title": piece.title,
             "performance_bpm": piece.performance_tempo,
         }
+        # The bytes this piece is scored with, for the evaluation key. Taken
+        # before the run, so a piece that crashes still names its data.
+        try:
+            record["data_sha256"] = piece_data_sha256(piece, input_type)
+        except OSError:
+            record["data_sha256"] = None
         try:
             with piece_time_budget(piece_timeout):
                 flat = run_piece(
@@ -522,6 +547,7 @@ def evaluate_submission(
             f"python matchmaker_eval/make_folds.py --from-repo"
         )
 
+    fold_sha256 = sha256_of(fold_path(fold))
     metrics = {
         "submission": name,
         "method": method,
@@ -538,10 +564,16 @@ def evaluate_submission(
         "metadata": metadata,
         "fold": str(fold),
         "fold_file": fold_file_label(fold),
-        "fold_sha256": sha256_of(fold_path(fold)),
+        "fold_sha256": fold_sha256,
         "input_type": input_type,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "environment": environment_info(),
+        # The conditions these numbers were scored under, as one key. Rows
+        # with the same key are comparable; see provenance.py. On a shard it
+        # covers that shard's pieces only, and merge_shards.py recomputes it.
+        "evaluation": evaluation_record(
+            code_components(fold_sha256, scoring_parts()), piece_records
+        ),
         "n_pieces": len(pieces),
         "fold_size": fold_size,
         # A partial run — one shard, --limit, or a fold with unusable pieces —

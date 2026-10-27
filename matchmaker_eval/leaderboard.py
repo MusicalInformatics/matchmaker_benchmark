@@ -71,6 +71,9 @@ CSV_COLUMNS = [
     "skewness", "kurtosis", "smoothness", "median_b_all", "rtf",
     "feature_latency_ms", "inference_latency_ms", "n_pieces", "n_tracked",
     "estimated_bpm", "evaluated",
+    # The conditions the row was scored under (see provenance.py). Cite it
+    # with any number taken from this file.
+    "evaluation_key",
 ]
 
 #: The per-dataset CSV adds where the entry stands on the whole fold, so a
@@ -96,10 +99,18 @@ PROVENANCE_COLUMNS = (
     "evaluated",
     "fold",
     "fold_sha256",
+    "evaluation_key",
     "matchmaker",
+    "matchmaker_commit",
     "benchmark_commit",
     "details",
 )
+
+#: Where a leaderboard is kept once published under an evaluation key, inside
+#: the results directory. A key's directory is rewritten while the key is
+#: current and left as it is after, so the numbers a paper cites stay where it
+#: says they are.
+ARCHIVE_NAME = "archive"
 
 def metric_columns(record: dict) -> dict:
     """The number columns of a row, from a record's pooled summaries.
@@ -153,7 +164,10 @@ def row_from_metrics(metrics: dict) -> dict:
         "evaluated": metrics.get("timestamp", ""),
         "fold": metrics.get("fold", ""),
         "fold_sha256": metrics.get("fold_sha256", ""),
+        "evaluation_key": (metrics.get("evaluation") or {}).get("key"),
+        "evaluation": (metrics.get("evaluation") or {}).get("components") or {},
         "matchmaker": metrics.get("environment", {}).get("matchmaker", ""),
+        "matchmaker_commit": metrics.get("environment", {}).get("matchmaker_commit", ""),
         "benchmark_commit": metrics.get("environment", {}).get("benchmark_commit", ""),
         # Per-piece rows and alignment paths, written by export_details.py and
         # loaded by the page only when someone opens this row.
@@ -250,8 +264,48 @@ def dataset_boards(leaderboard: dict) -> dict:
     return boards
 
 
+def split_by_conditions(rows: list) -> tuple:
+    """(current key, components, rows scored under it, rows scored otherwise).
+
+    The current conditions are those of the most recently evaluated row: every
+    run is scored by the code, data and fold of its moment, so the newest run
+    is the one that reflects them. A row with any other key — or none, from
+    before keys existed — was scored under conditions that have since changed
+    and is not ranked against the rest. It is kept, unranked, with the
+    components that differ, so the page can say what it is waiting for.
+
+    When no row carries a key at all, nothing can be told apart and every row
+    is treated as current: the board then reads as it did before keys.
+    """
+    if not rows:
+        return None, {}, [], []
+    newest = max(rows, key=lambda row: row.get("evaluated") or "")
+    key, components = newest.get("evaluation_key"), newest.get("evaluation") or {}
+    current = [row for row in rows if row.get("evaluation_key") == key]
+    earlier = [row for row in rows if row.get("evaluation_key") != key]
+    for row in earlier:
+        theirs = row.get("evaluation") or {}
+        row["evaluation_changed"] = sorted(
+            name for name in set(components) | set(theirs)
+            if components.get(name) != theirs.get(name)
+        )
+    return key, components, current, earlier
+
+
+def rank(rows: list) -> list:
+    rows.sort(key=sort_key)
+    for position, row in enumerate(rows, 1):
+        row["rank"] = position
+    return rows
+
+
 def build(fold: str = LEADERBOARD_FOLD) -> dict:
     rows, skipped = collect(fold=fold)
+    key, components, rows, earlier = split_by_conditions(rows)
+    rank(rows)
+    earlier.sort(key=sort_key)
+    for row in earlier:
+        row["rank"] = None
     # Published as part of the leaderboard: a result that was withdrawn is a
     # fact about the ranking, and hiding it would make the history unreadable.
     retractions = [
@@ -267,6 +321,10 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
     return {
         "fold": fold,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        # Every ranked entry was scored under these conditions. Cite the key
+        # with the numbers; results/archive/<key>/ keeps them.
+        "evaluation_key": key,
+        "evaluation_conditions": components,
         "ranking": "tracking_rate desc, then median_b asc",
         "metrics": {
             "tracking_rate": "share of pieces followed to the end within tolerance",
@@ -277,8 +335,15 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
             "median_b_all": "median absolute beat error over every piece",
             "rtf": "real-time factor: processing time / performance duration",
             "estimated_bpm": "given the performance tempo rather than only the score tempo",
+            "evaluation_key": "hash of the conditions a row was scored under "
+            "(fold, data files, scoring code, matchmaker sources, partitura); "
+            "rows are only ranked against rows with the same key",
         },
         "entries": rows,
+        # Scored under other conditions than the entries above, so not ranked
+        # against them. Each carries its own key and the components that
+        # differ; re-running it moves it back into the ranking.
+        "earlier_conditions": earlier,
         "skipped": skipped,
         "retracted": retractions,
     }
@@ -327,7 +392,51 @@ def write(leaderboard: dict) -> list:
     for stale in sorted(RESULTS_DIR.glob("leaderboard-*.*")):
         if stale.name not in written and stale.suffix in (".json", ".csv"):
             stale.unlink()
+
+    if leaderboard.get("evaluation_key"):
+        written += archive(leaderboard)
     return written
+
+
+def archive(leaderboard: dict) -> list:
+    """Keep this leaderboard under its evaluation key. Returns what was written.
+
+    ``results/archive/<key>/`` holds the ranked board of that key: rewritten
+    while the key is current, untouched once a newer key takes over. A paper
+    that cites a key can therefore always point at the exact table it took
+    its numbers from, and a reader can check them against the conditions
+    recorded beside it. ``results/archive/index.json`` lists every key with
+    when it was first and last published.
+    """
+    key = leaderboard["evaluation_key"]
+    archive_dir = RESULTS_DIR / ARCHIVE_NAME
+    index_path = archive_dir / "index.json"
+    target = archive_dir / key
+    target.mkdir(parents=True, exist_ok=True)
+    board = {
+        **{k: leaderboard[k] for k in (
+            "fold", "generated", "evaluation_key", "evaluation_conditions",
+            "ranking", "metrics", "entries",
+        )},
+    }
+    write_pair(board, target / "leaderboard.json", target / "leaderboard.csv", CSV_COLUMNS)
+
+    index = []
+    if index_path.exists():
+        index = json.loads(index_path.read_text()).get("archives", [])
+    entry = next((e for e in index if e["key"] == key), None)
+    if entry is None:
+        entry = {"key": key, "first_published": leaderboard["generated"]}
+        index.append(entry)
+    entry.update({
+        "last_updated": leaderboard["generated"],
+        "n_entries": len(leaderboard["entries"]),
+        "conditions": leaderboard["evaluation_conditions"],
+    })
+    index.sort(key=lambda e: e["first_published"])
+    index_path.write_text(json.dumps({"archives": index}, indent=2) + "\n")
+    return [f"archive/{key}/leaderboard.json", f"archive/{key}/leaderboard.csv",
+            "archive/index.json"]
 
 
 def render_table(leaderboard: dict) -> str:
@@ -359,6 +468,15 @@ def render_table(leaderboard: dict) -> str:
         lines.append(
             "* given the performance's tempo, not just the score's notated one"
         )
+    if leaderboard.get("evaluation_key"):
+        lines.append("")
+        lines.append(f"evaluation key {leaderboard['evaluation_key']}")
+    for row in leaderboard.get("earlier_conditions", []):
+        changed = ", ".join(row.get("evaluation_changed") or []) or "no key"
+        lines.append(
+            f"  not ranked: {row['submission']} (key {row.get('evaluation_key')}, "
+            f"differs in {changed}) — re-run it to rank it"
+        )
     return "\n".join(lines)
 
 
@@ -383,8 +501,8 @@ def main():
             print("results/leaderboard.json does not exist")
             return 1
         committed = json.loads(LEADERBOARD_JSON.read_text())
-        for key in ("entries", "retracted"):
-            if committed.get(key, [] if key == "retracted" else None) != leaderboard[
+        for key in ("entries", "earlier_conditions", "retracted"):
+            if committed.get(key, [] if key != "entries" else None) != leaderboard[
                 key
             ]:
                 print(f"results/leaderboard.json is out of date ({key}) — rebuild it.")
