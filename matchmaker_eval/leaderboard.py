@@ -44,6 +44,8 @@ import json
 import math
 from datetime import datetime, timezone
 
+from matchmaker.utils.eval import TOLERANCES_IN_BEATS
+
 from matchmaker_eval.folds import LEADERBOARD_FOLD, REPO_ROOT
 from matchmaker_eval.retract import read_retractions
 
@@ -62,9 +64,10 @@ def dataset_paths(dataset: str) -> tuple:
 
 #: (column, path into the metrics record). Kept flat and explicit so the CSV
 #: header is stable across benchmark versions.
+ACCURACY_COLUMNS = [f"accuracy_{tolerance:g}b" for tolerance in TOLERANCES_IN_BEATS]
 CSV_COLUMNS = [
     "rank", "submission", "kind", "name", "authors", "input_type",
-    "tracking_rate", "mean_b", "median_b", "std_b", "accuracy_b",
+    "tracking_rate", "mean_b", "median_b", "std_b", *ACCURACY_COLUMNS,
     "skewness", "kurtosis", "smoothness", "median_b_all", "rtf",
     "feature_latency_ms", "inference_latency_ms", "n_pieces", "n_tracked",
     "estimated_bpm", "evaluated",
@@ -114,7 +117,7 @@ def metric_columns(record: dict) -> dict:
             "mean_b", "median_b", "std_b", "skewness", "kurtosis", "smoothness",
             "rtf", "feature_latency_ms", "inference_latency_ms",
         )},
-        "accuracy_b": tracked.get("accuracy_b", {}),
+        **{key: tracked.get(key) for key in ACCURACY_COLUMNS},
         "median_b_all": overall.get("median_b"),
         "n_pieces": record.get("n_pieces", 0),
         "n_tracked": record.get("n_tracked", 0),
@@ -198,7 +201,8 @@ def collect(results_dir: Path = None, fold: str = LEADERBOARD_FOLD):
                 f"{metrics.get('fold_size')} pieces) — rerun the full fold"
             )
             continue
-        if "smoothness" not in metrics.get("summary_all", {}):
+        summary = metrics.get("summary_all", {})
+        if "smoothness" not in summary or "accuracy_b" in summary:
             skipped.append(f"{path}: previous metric format — re-evaluate this entry")
             continue
         rows.append(row_from_metrics(metrics))
@@ -268,7 +272,7 @@ def build(fold: str = LEADERBOARD_FOLD) -> dict:
             "tracking_rate": "share of pieces followed to the end within tolerance",
             "median_b": "median absolute beat error, pooled over tracked pieces",
             "mean_b": "mean absolute beat error, pooled over tracked pieces",
-            "accuracy_b": "share of onsets within each beat-error tolerance",
+            **{key: "share of onsets within " + key.removeprefix("accuracy_") for key in ACCURACY_COLUMNS},
             "smoothness": "mean SPARC smoothness across tracked pieces; higher is smoother",
             "median_b_all": "median absolute beat error over every piece",
             "rtf": "real-time factor: processing time / performance duration",
@@ -302,7 +306,7 @@ def write_pair(board: dict, json_path: Path, csv_path: Path, columns: list) -> N
         writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for row in board["entries"]:
-            writer.writerow({**row, "accuracy_b": json.dumps(row.get("accuracy_b", {}))})
+            writer.writerow(row)
 
 
 def write(leaderboard: dict) -> list:

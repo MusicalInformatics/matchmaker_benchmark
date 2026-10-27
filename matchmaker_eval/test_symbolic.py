@@ -79,7 +79,7 @@ TEMPO_DEPENDENT_METHODS = ["pfkorz"]
 
 TEMPO_METADATA_PATH = WORKING_DIR / "data/perf_tempo_estimate"
 
-DISPLAY_COLUMNS = ["Index", "Piece", "mean_b", "median_b", "accuracy_b", "smoothness", "tracked"]
+DISPLAY_COLUMNS = ["Index", "Piece", "mean_b", "median_b", "accuracy_0.3b", "smoothness", "tracked"]
 
 
 def print_summary_table(results: dict):

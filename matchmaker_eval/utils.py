@@ -31,7 +31,7 @@ from numpy.typing import NDArray
 from pydantic_settings import BaseSettings
 
 WORKING_DIR = Path(__file__).parent.parent
-METRICS_BEAT = ["mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis", "smoothness"]
+METRICS_BEAT = ["mean_b", "median_b", "std_b", *[f"accuracy_{t:g}b" for t in TOLERANCES_IN_BEATS], "skewness", "kurtosis", "smoothness"]
 METRICS_TRACKING = ["tracked", "max_deviation", "n_failed_segments"]
 METRICS_ALL = METRICS_BEAT + METRICS_TRACKING
 

@@ -438,10 +438,14 @@ def run_offline_alignment(
     score_beats = score_beats[valid]
     perf_annots = perf_annots[valid]
 
-    predicted = transfer_offline_positions(wp, perf_annots, config.frame_rate)
-    predicted_beats = np.interp(predicted, score_annots, score_beats)
     frame_to_beat = mm.ref_frame_to_beat()
+    reference_frames = wp[0].astype(int)
+    if np.any(reference_frames < 0) or np.any(reference_frames >= len(frame_to_beat)):
+        raise ValueError(
+            "Offline alignment reference frames exceed the frame-to-beat mapping "
+            f"of length {len(frame_to_beat)}"
+        )
     return evaluate_alignment(
-        frame_to_beat[wp[0].astype(int)], wp[1] / config.frame_rate,
+        frame_to_beat[reference_frames], wp[1] / config.frame_rate,
         score_beats, perf_annots, beat_tolerances=TOLERANCES_IN_BEATS,
     )

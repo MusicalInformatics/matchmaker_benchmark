@@ -8,6 +8,7 @@ so a number reported for one dataset can never be pooled differently from the
 number above it.
 """
 
+import csv
 import json
 import sys
 from pathlib import Path
@@ -44,7 +45,7 @@ def run_dir(tmp_path):
 
 
 PIECES = [
-    {"index": 0, "piece_id": "asap/a", "dataset": "asap", "tracked": True, "rtf": 0.1, "estimated_bpm": 120.0},
+    {"index": 0, "piece_id": "asap/a", "dataset": "asap", "tracked": True, "rtf": 0.1, "performance_bpm": 120.0},
     {"index": 1, "piece_id": "batik/b", "dataset": "batik", "tracked": True, "rtf": 0.3},
     {"index": 2, "piece_id": "batik/c", "dataset": "batik", "tracked": False, "error": "boom"},
 ]
@@ -63,7 +64,7 @@ class TestPooling:
         assert block["n_tracked"] == 1
         assert block["n_failed"] == 1
         assert block["summary_all"]["tracking_rate"] == 0.5
-        assert set(block["summary_tracked"]) >= {"mean_b", "median_b", "accuracy_b", "rtf", "smoothness"}
+        assert set(block["summary_tracked"]) >= {"mean_b", "median_b", "accuracy_0.5b", "rtf", "smoothness"}
 
     def test_a_crashed_piece_does_not_shift_the_timing_columns(self, run_dir):
         """The crashed piece has no rtf; the others' must still line up."""
@@ -188,12 +189,16 @@ class TestDatasetBoards:
         assert "leaderboard-asap.csv" in written
         header = (results / "leaderboard-asap.csv").read_text().splitlines()[0]
         assert header.split(",")[:2] == ["rank", "overall_rank"]
+        with (results / "leaderboard-asap.csv").open() as handle:
+            rows = list(csv.DictReader(handle))
+        assert "accuracy_b" not in rows[0]
+        assert float(rows[0]["accuracy_0.5b"]) == 1.0
 
     def test_the_index_row_carries_the_per_dataset_columns(self, results):
         L.write(L.build())
         board = json.loads((results / "leaderboard.json").read_text())
         entry = next(e for e in board["entries"] if e["submission"] == "demo-midi")
-        assert entry["datasets"]["batik"]["accuracy_b"]["0.5b"] is not None
+        assert entry["datasets"]["batik"]["accuracy_0.5b"] is not None
         assert entry["datasets"]["batik"]["smoothness"] is not None
 
 
@@ -212,8 +217,8 @@ class TestTheDetailFile:
             json.dumps(merged["summary_tracked"])
         )
         assert detail["overall"]["n_pieces"] == 3
-        assert detail["pieces"][0]["estimated_bpm"] == 120.0
-        assert "estimated_bpm" not in detail["metrics"]
+        assert detail["pieces"][0]["performance_bpm"] == 120.0
+        assert "performance_bpm" not in detail["metrics"]
 
 
 class TestPublishedJsonIsStrict:

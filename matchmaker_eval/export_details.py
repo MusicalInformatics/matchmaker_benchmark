@@ -36,7 +36,7 @@ import json
 import numpy as np
 
 from matchmaker_eval.folds import LEADERBOARD_FOLD, REPO_ROOT
-from matchmaker_eval.leaderboard import without_nan
+from matchmaker_eval.leaderboard import ACCURACY_COLUMNS, without_nan
 
 SUBMISSION_RESULTS = REPO_ROOT / "results" / "submissions"
 DETAILS_DIR = REPO_ROOT / "results" / "details"
@@ -65,13 +65,13 @@ PIECE_IDENTITY = (
     "tracked",
     "error",
     "used_estimated_bpm",
-    "estimated_bpm",
+    "performance_bpm",
 )
 
 #: Order metrics are presented in. Anything not named here still appears, after
 #: these, so nothing is ever silently dropped.
 METRIC_ORDER = (
-    "mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis",
+    "mean_b", "median_b", "std_b", *ACCURACY_COLUMNS, "skewness", "kurtosis",
     "smoothness", "max_deviation", "n_failed_segments", "rtf",
     "feature_latency_ms", "inference_latency_ms",
 )
@@ -138,7 +138,7 @@ def export(run_dir: Path, include_paths: bool = True) -> dict:
             "dataset": piece.get("dataset"),
             "title": piece.get("title"),
             "tracked": bool(piece.get("tracked")),
-            "estimated_bpm": piece.get("estimated_bpm"),
+            "performance_bpm": piece.get("performance_bpm"),
         }
         for key in ordered_metrics(piece):
             row[key] = piece[key]

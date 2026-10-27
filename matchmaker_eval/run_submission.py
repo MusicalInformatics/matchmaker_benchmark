@@ -459,7 +459,7 @@ def evaluate_submission(
             "piece_id": piece.piece_id,
             "dataset": piece.dataset,
             "title": piece.title,
-            "estimated_bpm": piece.performance_tempo,
+            "performance_bpm": piece.performance_tempo,
         }
         try:
             with piece_time_budget(piece_timeout):
