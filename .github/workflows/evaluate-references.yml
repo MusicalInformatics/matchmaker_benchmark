@@ -141,11 +141,11 @@ jobs:
       - name: Install the benchmark environment
         run: |
           python -m pip install --upgrade pip
-          # Pinned to one matchmaker commit (develop after #72, 0.4.0rc1):
+          # Pinned to one matchmaker commit (the 0.4.0 release, main after #73):
           # its sources are part of the evaluation key, so every row of a run
-          # must be scored by the same matchmaker. Move every workflow to the
-          # v0.4.0 tag together once it is released.
-          pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@f92877286f5a03fe846bd7b6d49f8f4d0d65971e"
+          # must be scored by the same matchmaker. The v0.4.0 tag holds the same
+          # sources, so moving to it later does not change any key.
+          pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@6d73fb717036d60a1cfd6431fbddb4de6705d5c1"
           pip install pyyaml pydantic-settings
 
       - name: Check out the benchmark data
@@ -243,7 +243,7 @@ jobs:
 
       - name: Install what the merge needs
         run: |
-          pip install --quiet "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@f92877286f5a03fe846bd7b6d49f8f4d0d65971e"
+          pip install --quiet "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@6d73fb717036d60a1cfd6431fbddb4de6705d5c1"
           pip install --quiet pyyaml pydantic-settings
 
       - uses: actions/download-artifact@v4
