@@ -241,11 +241,11 @@ def main():
                     "TR (%)": f"{tr * 100:.1f}%",
                     "Tracked": met.get("n_tracked", 0),
                     "MeanAE": _fmt_val(beat_tr.get("mean_b"), ".3f"),
-                    "0.5b": _fmt_pct(beat_tr.get("accuracy_b", {}).get("0.5b")),
+                    "0.5b": _fmt_pct(beat_tr.get("accuracy_0.5b")),
                     "Smoothness": _fmt_val(tracked_sum.get("smoothness"), ".2f"),
                     "Common Count": len(common_pieces),
                     "Common MeanAE": _fmt_val(common_summary.get("mean_b"), ".3f"),
-                    "Common 0.5b": _fmt_pct(common_summary.get("accuracy_b", {}).get("0.5b")),
+                    "Common 0.5b": _fmt_pct(common_summary.get("accuracy_0.5b")),
                     "Common Smoothness": _fmt_val(common_summary.get("smoothness"), ".2f"),
                     "RTF": _fmt_val(tracked_sum.get("rtf"), ".4f"),
                 }

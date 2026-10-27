@@ -560,7 +560,7 @@
           <th data-key="name" data-dir="asc" scope="col">Submission<span class="arrow"></span></th>
           <th data-key="input_type" data-dir="asc" scope="col">Input<span class="arrow"></span></th>
           <th data-key="tracking_rate" data-dir="desc" aria-sort="descending" scope="col">Tracked ↑<span class="arrow"></span></th>
-          <th data-key="accuracy_b.0.3b" data-dir="desc" scope="col">&le; 0.3 beat ↑<span class="arrow"></span></th>
+          <th data-key="accuracy_0.3b" data-dir="desc" scope="col">&le; 0.3 beat ↑<span class="arrow"></span></th>
           <th data-key="median_b" data-dir="asc" scope="col">Beat err (med) ↓<span class="arrow"></span></th>
           <th data-key="mean_b" data-dir="asc" scope="col">Beat err (mean) ↓<span class="arrow"></span></th>
           <th data-key="smoothness" data-dir="desc" scope="col">Smoothness ↑<span class="arrow"></span></th>
@@ -652,7 +652,7 @@
 // results/. Inlined data, when present, wins over both.
 const SOURCES = ["./", "../results/"];
 const NUMERIC = new Set([
-  "rank", "tracking_rate", "accuracy_b.0.3b", "median_b", "mean_b",
+  "rank", "tracking_rate", "accuracy_0.3b", "median_b", "mean_b",
   "smoothness", "median_b_all", "rtf",
 ]);
 
@@ -664,7 +664,7 @@ const LOWER_IS_BETTER = new Set([
 
 const METRIC_GROUPS = [
   ["Error analysis", (m) => ["mean_b", "median_b", "std_b", "skewness", "kurtosis"].includes(m)],
-  ["Alignment accuracy within tolerance", (m) => m.startsWith("accuracy_b.")],
+  ["Alignment accuracy within tolerance", (m) => m.startsWith("accuracy_")],
   ["Smoothness (SPARC)", (m) => m === "smoothness"],
   ["Tracking", (m) => ["tracked", "tracking_rate", "max_deviation", "n_failed_segments"].includes(m)],
   ["Processing time", () => true],
@@ -690,7 +690,7 @@ function fmt(value, digits) {
 
 // Shares are stored 0..1; showing them as percentages is what people read.
 function isShare(metric) {
-  return metric.startsWith("accuracy_b.") || metric === "tracking_rate";
+  return metric.startsWith("accuracy_") || metric === "tracking_rate";
 }
 
 function showMetric(metric, value) {
@@ -879,11 +879,10 @@ async function loadDetail(entry) {
 // the main table reports, and over every piece, lost ones included — and the
 // toggle above the table picks which one is shown.
 
-// The stored metrics keep matchmaker's schema. Expand accuracy thresholds only
-// for rendering individual table columns, without changing the saved record.
+// Metric keys are shared by matchmaker, JSON, CSV, and the website.
 function metricLabel(metric) {
-  const label = metric.startsWith("accuracy_b.")
-    ? `≤ ${metric.slice("accuracy_b.".length, -1)} beat`
+  const label = metric.startsWith("accuracy_")
+    ? `≤ ${metric.slice("accuracy_".length, -1)} beat`
     : ({mean_b: "mean error (beats)", median_b: "median error (beats)", std_b: "error std (beats)",
         feature_latency_ms: "feature latency (ms)", inference_latency_ms: "inference latency (ms)"})[metric]
       || metric.replace(/_/g, " ");
@@ -892,33 +891,20 @@ function metricLabel(metric) {
   return label + direction;
 }
 
-function metricValue(record, metric) {
-  return metric.startsWith("accuracy_b.")
-    ? record?.accuracy_b?.[metric.slice("accuracy_b.".length)]
-    : record?.[metric];
-}
-
 function showPieceMetric(metric, piece) {
-  const value = metricValue(piece, metric);
+  const value = piece?.[metric];
   const text = showMetric(metric, value);
-  const bpm = piece?.estimated_bpm;
+  const bpm = piece?.performance_bpm;
   if (!["mean_b", "median_b"].includes(metric) || !Number.isFinite(value)
       || !Number.isFinite(bpm) || bpm <= 0) return text;
   const ms = Math.round(value * 60000 / bpm);
   return `${text} <span class="approx-ms">(≈${ms} ms)</span>`;
 }
 
-function metricNames(metrics, pieces) {
-  return metrics.flatMap((metric) => metric === "accuracy_b"
-    ? [...new Set(pieces.flatMap((piece) => Object.keys(piece.accuracy_b || {})))].map((key) => `accuracy_b.${key}`)
-    : [metric]);
-}
-
 function flatSummary(summary) {
-  const fields = ["mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis", "smoothness", "rtf", "feature_latency_ms", "inference_latency_ms"];
-  return Object.fromEntries(metricNames(fields, [summary || {}])
-    .filter((metric) => metricValue(summary, metric) !== undefined)
-    .map((metric) => [metric, metricValue(summary, metric)]));
+  const fields = ["mean_b", "median_b", "std_b", "skewness", "kurtosis", "smoothness", "rtf", "feature_latency_ms", "inference_latency_ms"];
+  return Object.fromEntries(Object.entries(summary || {})
+    .filter(([metric]) => fields.includes(metric) || metric.startsWith("accuracy_")));
 }
 
 function datasetRows(detail, pool) {
@@ -1005,7 +991,7 @@ function datasetPanel(detail, other, otherDetail, pool, active) {
 // Every metric, for every piece. Wide on purpose: the identity columns are
 // pinned so the numbers can scroll under them.
 function pieceTable(detail, other, state) {
-  const metrics = metricNames(detail.metrics || [], detail.pieces || []);
+  const metrics = detail.metrics || [];
   const head = `
     <tr>
       <th class="sticky c0">#</th>
@@ -1020,7 +1006,7 @@ function pieceTable(detail, other, state) {
   if (state.sort) {
     const key = state.sort;
     rows.sort((a, b) => {
-      const x = metricValue(a, key), y = metricValue(b, key);
+      const x = a?.[key], y = b?.[key];
       if (typeof x === "boolean" || typeof y === "boolean") return (y ? 1 : 0) - (x ? 1 : 0);
       const xv = x ?? Infinity, yv = y ?? Infinity;
       return state.dir === "asc" ? xv - yv : yv - xv;
@@ -1032,7 +1018,7 @@ function pieceTable(detail, other, state) {
     const cells = metrics.map((m) => {
       const mine = showPieceMetric(m, p);
       if (!cmp) return `<td>${mine}</td>`;
-      const a = metricValue(p, m), b = metricValue(cmp, m);
+      const a = p?.[m], b = cmp?.[m];
       let cls = "";
       if (typeof a === "number" && typeof b === "number" && a !== b && !["skewness", "kurtosis"].includes(m)) {
         const better = LOWER_IS_BETTER.has(m) ? a < b : a > b;
@@ -1057,7 +1043,7 @@ function pieceTable(detail, other, state) {
 }
 
 function metricReadout(detail, piece, other, otherDetail) {
-  const metrics = metricNames(detail.metrics || [], detail.pieces || []);
+  const metrics = detail.metrics || [];
   let remaining = metrics.slice();
   const blocks = [];
   for (const [label, test] of METRIC_GROUPS) {
@@ -1069,7 +1055,7 @@ function metricReadout(detail, piece, other, otherDetail) {
       if (!other) {
         return `<div class="metric"><span>${escapeHtml(metricLabel(m))}</span><span>${showPieceMetric(m, piece)}</span></div>`;
       }
-      const a = metricValue(piece, m), b = metricValue(other, m);
+      const a = piece?.[m], b = other?.[m];
       let cls = "";
       if (typeof a === "number" && typeof b === "number" && a !== b && !["skewness", "kurtosis"].includes(m)) {
         cls = (LOWER_IS_BETTER.has(m) ? a < b : a > b) ? "delta-better" : "delta-worse";
@@ -1302,8 +1288,8 @@ function render() {
   shown.sort((a, b) => {
     const dir = sort.dir === "asc" ? 1 : -1;
     if (NUMERIC.has(sort.key)) {
-      const x = metricValue(a, sort.key) ?? Infinity;
-      const y = metricValue(b, sort.key) ?? Infinity;
+      const x = a?.[sort.key] ?? Infinity;
+      const y = b?.[sort.key] ?? Infinity;
       return (x - y) * dir;
     }
     return String(a[sort.key] ?? "").localeCompare(String(b[sort.key] ?? "")) * dir;
@@ -1311,7 +1297,7 @@ function render() {
 
   tbody.innerHTML = shown.map((entry, i) => {
     const pct = Math.round((entry.tracking_rate || 0) * 100);
-    const within = entry.accuracy_b?.["0.3b"];
+    const within = entry["accuracy_0.3b"];
     return `
       <tr class="entry" data-key="${escapeHtml(entry.submission)}" tabindex="0"
           role="button" aria-expanded="false">

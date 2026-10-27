@@ -129,7 +129,7 @@ def compare(method: str, fold: str, limit: int, input_type: str = "midi") -> int
             builtin = run(method, piece, input_type)  # what the runners do
             registered = run(clone, piece, input_type)  # what a submission does
 
-            for key in ("mean_b", "median_b", "std_b", "smoothness", "accuracy_b"):
+            for key in ("mean_b", "median_b", "std_b", "smoothness", *[key for key in builtin if key.startswith("accuracy_")]):
                 x, y = builtin[key], registered[key]
                 same = x == y or (isinstance(x, float) and isinstance(y, float) and np.isclose(x, y, equal_nan=True))
                 if not same:

@@ -45,11 +45,9 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
     )
     expected = evaluate_alignment(beats, times, gt_times, gt_times)
     actual = run_evaluation(mm, gt=np.column_stack([gt_times, gt_times]))
-    assert actual["accuracy_b"] == expected["accuracy_b"]
     for key in expected:
-        if key != "accuracy_b":
-            assert actual[key] == pytest.approx(expected[key], nan_ok=True)
-    assert set(actual) == {"mean_b", "median_b", "std_b", "accuracy_b", "skewness", "kurtosis", "smoothness"}
+        assert actual[key] == pytest.approx(expected[key], nan_ok=True)
+    assert actual.keys() == expected.keys()
 
     np.savetxt(
         tmp_path / "wp_0.tsv",
@@ -69,7 +67,9 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
     assert summary["smoothness"] == expected["smoothness"]
     columns = metric_columns({"summary_tracked": summary})
     assert columns["smoothness"] == expected["smoothness"]
-    assert columns["accuracy_b"] == expected["accuracy_b"]
+    for key in expected:
+        if key.startswith("accuracy_"):
+            assert columns[key] == expected[key]
 
 
 def test_pooling_skips_undefined_smoothness(tmp_path):

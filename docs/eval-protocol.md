@@ -87,7 +87,7 @@ The benchmark uses matchmaker's evaluation result format directly and adds track
 | Metric | Direction | Meaning |
 | --- | --- | --- |
 | `mean_b`, `median_b`, `std_b` | performance → score | Mean, median, and standard deviation of absolute score-position error, in beats. |
-| `accuracy_b` | performance → score | Fraction of annotated onsets within each beat-error tolerance, such as `0.5b`. |
+| `accuracy_0.05b`, `accuracy_0.1b`, `accuracy_0.3b`, `accuracy_0.5b`, `accuracy_1b`, `accuracy_2b` | performance → score | Fraction of annotated onsets within each beat-error tolerance; the same flat fields are used in JSON and CSV. |
 | `skewness`, `kurtosis` | — | Unitless statistics of the signed score-position error distribution. |
 | `smoothness` | — | Trajectory smoothness computed with SPARC; higher (less negative) is smoother. |
 | `rtf` | — | Processing time divided by the annotated performance span. |
@@ -106,6 +106,9 @@ Windows start at ground-truth performance onsets, following the TR window policy
 Short pieces use one whole-piece window, and the final window is clipped at the last annotated onset.
 Each piece averages its valid window values, and the headline score averages these per-piece values over tracked pieces only.
 Fully stationary or otherwise undefined windows are skipped; `smoothness` is `null` when no window can be scored.
+Compare smoothness only within the same input type (audio or MIDI), since position-reporting patterns differ between modalities.
+
+Per-piece `performance_bpm` comes from the fold's `estimated_bpm` column and is used only to display approximate ms equivalents of beat errors; the run-level `estimated_bpm` remains the boolean indicating whether the follower received the tempo.
 
 ### What a follower is told
 
