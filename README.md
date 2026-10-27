@@ -22,7 +22,7 @@ data** — the evaluation runs on GitHub's runners, which fetch what they need.
 git clone https://github.com/pymatchmaker/matchmaker_benchmark.git
 cd matchmaker_benchmark
 conda env create -f environment.yml && conda activate matchmaker-benchmark
-pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@main"
+pip install "pymatchmaker @ git+https://github.com/pymatchmaker/matchmaker.git@f92877286f5a03fe846bd7b6d49f8f4d0d65971e"
 
 cp -r submissions/_template submissions/your-name
 ```
