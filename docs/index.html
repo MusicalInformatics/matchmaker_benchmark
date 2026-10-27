@@ -592,10 +592,11 @@
     <section>
       <h2>Tracked</h2>
       <p>
-        A piece counts as tracked unless two or more 30-second segments drift
-        past the tolerance — 0.5 beats for MIDI, 1.0 for audio. A follower that
-        loses the performer produces meaningless errors, so accuracy is only
-        reported over the pieces it held onto.
+        The performance is walked in 30-second windows, one starting at every
+        annotated onset. A piece counts as tracked unless the median beat error
+        in any window exceeds the tolerance — 0.5 beats for MIDI, 1.0 for
+        audio. A follower that loses the performer produces meaningless errors,
+        so accuracy is only reported over the pieces it held onto.
       </p>
     </section>
     <section>
