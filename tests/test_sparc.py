@@ -43,15 +43,19 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
         alignment_duration=None,
         input_type="midi",
     )
-    expected = evaluate_alignment(beats, times, gt_times, gt_times)
+    expected = evaluate_alignment(beats, times, gt_times, gt_times, return_details=True)
+    expected_sparc = expected["smoothness_details"]
     actual = run_evaluation(mm, gt=np.column_stack([gt_times, gt_times]))
+    assert actual["beat"]["mean"] == expected["mean_b"]
+    assert actual["ms"] == expected["ms"]
+    assert "sparc_windows" not in actual
     for key in (
         "sparc",
         "sparc_n_windows",
         "sparc_n_valid_windows",
         "sparc_valid_window_fraction",
     ):
-        assert actual[key] == expected[key]
+        assert actual[key] == expected_sparc[key]
 
     np.savetxt(
         tmp_path / "wp_0.tsv",
@@ -68,15 +72,15 @@ def test_evaluator_and_pooled_summary_match_library(tmp_path):
         comments="",
     )
     summary = compute_event_pooled_summary({"Index": [0], "tracked": [True]}, tmp_path)
-    assert summary["sparc"] == pytest.approx(expected["sparc"])
+    assert summary["sparc"] == pytest.approx(expected_sparc["sparc"])
     for key in (
         "sparc_n_windows",
         "sparc_n_valid_windows",
         "sparc_valid_window_fraction",
     ):
-        assert summary[key] == expected[key]
+        assert summary[key] == expected_sparc[key]
     columns = metric_columns({"summary_tracked": summary})
-    assert columns["sparc_n_windows"] == expected["sparc_n_windows"]
+    assert columns["sparc_n_windows"] == expected_sparc["sparc_n_windows"]
     assert columns["sparc_valid_window_fraction"] == 1.0
 
 
