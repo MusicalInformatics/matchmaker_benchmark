@@ -1,0 +1,19 @@
+name: Gaussian Audio HMM (baseline)
+authors:
+  - Carlos Cancino-Chacón
+affiliation: Johannes Kepler University Linz
+contact: https://github.com/pymatchmaker/matchmaker_benchmark/issues
+input_type: audio
+description: >
+  Frame-level HMM with a cosine-exp observation model over chroma features
+  and a left-to-right (stay/advance) transition matrix. Adapts matchmaker's
+  GaussianAudioPitchHMM and CosineExpAudioPitchObservationModel into a
+  working audio baseline for the benchmark.
+url: https://github.com/pymatchmaker/matchmaker_benchmark
+license: Apache-2.0
+tuned_on: [valid]
+external_data: none
+eval_fold_untouched: true
+notes: >
+  Uses synthesised score audio for reference features. The forward step uses a
+  sliding window of 400 frames around the current best state for efficiency.
